@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useMutation, useQuery } from 'react-query';
@@ -12,22 +12,33 @@ import { draftKey, readDraft, saveDraft, type CheckoutDraft } from '../../api/ch
 
 interface Branch { branchId: number; name: string }
 const initialDelivery: DeliveryDetails = { name: '', email: '', address: '', city: '', postalCode: '', country: '' };
-const labels: Record<keyof DeliveryDetails, string> = {
-  name: 'Full name', email: 'Email', address: 'Street address', city: 'City', postalCode: 'Postal code', country: 'Country',
+type AddressField = Exclude<keyof DeliveryDetails, 'name' | 'email'>;
+const labels: Record<AddressField, string> = {
+  address: 'Street address', city: 'City', postalCode: 'Postal code', country: 'Country',
 };
-const autocomplete: Record<keyof DeliveryDetails, string> = {
-  name: 'name', email: 'email', address: 'street-address', city: 'address-level2', postalCode: 'postal-code', country: 'country-name',
+const autocomplete: Record<AddressField, string> = {
+  address: 'street-address', city: 'address-level2', postalCode: 'postal-code', country: 'country-name',
 };
 
 export default function Checkout() {
   const auth = useAuth();
-  const userId = auth.session?.user.userId;
+  const user = auth.session?.user;
+  const userId = user?.userId;
   const { cart, loading, busy, error, notifyChanged } = useCart();
   const [restored] = useState(() => {
-    try { return { draft: readDraft(userId), error: '' }; }
+    try {
+      const draft = readDraft(userId);
+      if (user && draft.review && !draft.submitted) {
+        draft.review.request.delivery = { ...draft.review.request.delivery, name: user.name, email: user.email };
+      }
+      return { draft, error: '' };
+    }
     catch (error) { return { draft: null, error: cartError(error) }; }
   });
-  const [delivery, setDelivery] = useState(restored.draft?.delivery ?? initialDelivery);
+  const [deliveryDraft, setDelivery] = useState(restored.draft?.delivery ?? initialDelivery);
+  const delivery = useMemo(() => ({
+    ...deliveryDraft, name: user?.name ?? '', email: user?.email ?? '',
+  }), [deliveryDraft, user?.name, user?.email]);
   const [branchId, setBranchId] = useState(restored.draft?.branchId ?? '');
   const [review, setReview] = useState<CheckoutDraft['review']>(restored.draft?.review ?? null);
   const [submitted, setSubmitted] = useState(restored.draft?.submitted ?? false);
@@ -136,11 +147,18 @@ export default function Checkout() {
               try { startReview(event); } catch (error) { setStorageError(cartError(error)); }
             }} className="space-y-5">
               <h2 className="text-xl font-bold">Delivery details</h2>
+              {user ? (
+                <section aria-label="Account contact" className="border-l-4 border-primary pl-5">
+                  <h3 className="font-semibold">Contact from your account</h3>
+                  <p className="break-words">{user.name}</p>
+                  <p className="break-words">{user.email}</p>
+                </section>
+              ) : <p>Your name and email will come from your account when you sign in.</p>}
               <div className="grid sm:grid-cols-2 gap-5">
-                {(Object.keys(labels) as (keyof DeliveryDetails)[]).map((field) => (
+                {(Object.keys(labels) as AddressField[]).map((field) => (
                   <label key={field} className={`block text-sm font-medium ${field === 'address' ? 'sm:col-span-2' : ''}`}>
                     {labels[field]}
-                    <input name={field} value={delivery[field]} type={field === 'email' ? 'email' : 'text'} autoComplete={autocomplete[field]} required maxLength={field === 'address' ? 500 : field === 'email' ? 254 : field === 'postalCode' ? 32 : 120} pattern={field === 'email' ? undefined : '.*\\S.*'} onChange={(event) => setDelivery({ ...delivery, [field]: event.target.value })} className={inputClass} />
+                    <input name={field} value={delivery[field]} type="text" autoComplete={autocomplete[field]} required maxLength={field === 'address' ? 500 : field === 'postalCode' ? 32 : 120} pattern={'.*\\S.*'} onChange={(event) => setDelivery({ ...delivery, [field]: event.target.value })} className={inputClass} />
                   </label>
                 ))}
               </div>

@@ -21,8 +21,6 @@ export async function loginCustomer(page: Page, credentials: { email: string; pa
 }
 
 export async function fillDelivery(page: Page) {
-  await page.getByLabel('Full name').fill('Cat Keeper');
-  await page.getByLabel('Email', { exact: true }).fill('keeper@example.com');
   await page.getByLabel('Street address').fill('1 Cat Lane');
   await page.getByLabel('City', { exact: true }).fill('London');
   await page.getByLabel('Postal code').fill('N1 1AA');

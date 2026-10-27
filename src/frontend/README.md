@@ -16,6 +16,8 @@
   this browser a fresh guest cart and clears private cached data/drafts.
 - You must sign in before placing an order. `/orders` lists your latest 100
   orders, and confirmation pages require their owner's session.
+- Checkout uses the signed-in account's name and email automatically. Only
+  address details and the ordering branch need to be entered.
 - Delivery fields, branch selection, review and the checkout idempotency ID
   are saved per account in **session storage**. They survive refresh/navigation
   in the same tab, not closing the tab. Guest delivery drafts transfer on

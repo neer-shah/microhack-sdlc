@@ -18,17 +18,26 @@ test('guest delivery draft survives refresh and registration; signed-in orders a
   await page.getByRole('button', { name: 'Sign in to continue', exact: true }).click();
   await expect(page).toHaveURL(/\/login\?returnTo=/);
   await page.getByRole('link', { name: 'Create an account', exact: true }).click();
+  const email = `guest-${crypto.randomUUID()}@example.com`;
   await page.getByLabel('Name', { exact: true }).fill('Guest Keeper');
-  await page.getByLabel('Email address').fill(`guest-${crypto.randomUUID()}@example.com`);
+  await page.getByLabel('Email address').fill(email);
   await page.getByLabel('Password').fill('a-valid-test-password');
   await page.getByRole('button', { name: 'Create account', exact: true }).click();
   await expect(page).toHaveURL(/\/checkout$/);
   await expect(page.getByLabel('Street address')).toHaveValue('1 Cat Lane');
+  await expect(page.getByRole('region', { name: 'Account contact' })).toContainText('Guest Keeper');
+  await expect(page.getByRole('region', { name: 'Account contact' })).toContainText(email);
+  await expect(page.getByLabel('Full name')).toHaveCount(0);
+  await expect(page.getByLabel('Email', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Review order', exact: true }).click();
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Review your order', exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Delivery review' })).toContainText('1 Cat Lane');
+  await expect(page.getByRole('region', { name: 'Delivery review' })).toContainText('Guest Keeper');
+  await expect(page.getByRole('region', { name: 'Delivery review' })).toContainText(email);
+  const placed = page.waitForRequest((request) => request.method() === 'POST' && request.url().endsWith('/checkout'));
   await page.getByRole('button', { name: 'Place order', exact: true }).click();
+  expect((await placed).postDataJSON().delivery).toMatchObject({ name: 'Guest Keeper', email });
   await expect(page).toHaveURL(/\/checkout\/confirmation\//);
   const confirmation = page.url();
   await page.getByRole('link', { name: 'My orders', exact: true }).first().click();
@@ -37,6 +46,35 @@ test('guest delivery draft survives refresh and registration; signed-in orders a
   await expect(page).toHaveURL(confirmation);
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Order confirmed', exact: true })).toBeVisible();
+});
+
+test('checkout uses login contact details instead of saved draft contact details', async ({ page }) => {
+  await addItem(page);
+  const credentials = await registerCustomer(page);
+  await page.getByRole('button', { name: 'Logout', exact: true }).click();
+  await loginCustomer(page, credentials);
+  await page.goto('/checkout');
+  await expect(page.getByRole('region', { name: 'Account contact' })).toContainText(credentials.name);
+  await expect(page.getByRole('region', { name: 'Account contact' })).toContainText(credentials.email);
+  await fillDelivery(page);
+  await page.getByRole('button', { name: 'Review order', exact: true }).click();
+  await page.evaluate(() => {
+    const key = Object.keys(sessionStorage).find((key) => key.startsWith('octocat-checkout-draft:'));
+    if (!key) { throw new Error('Checkout draft was not saved'); }
+    const draft = JSON.parse(sessionStorage.getItem(key) ?? '');
+    draft.delivery.name = draft.review.request.delivery.name = 'Old draft name';
+    draft.delivery.email = draft.review.request.delivery.email = 'old-draft@example.com';
+    sessionStorage.setItem(key, JSON.stringify(draft));
+  });
+  await page.reload();
+  const review = page.getByRole('region', { name: 'Delivery review' });
+  await expect(review).toContainText(credentials.name);
+  await expect(review).toContainText(credentials.email);
+  await expect(review).not.toContainText('old-draft@example.com');
+  const placed = page.waitForRequest((request) => request.method() === 'POST' && request.url().endsWith('/checkout'));
+  await page.getByRole('button', { name: 'Place order', exact: true }).click();
+  expect((await placed).postDataJSON().delivery).toMatchObject({ name: credentials.name, email: credentials.email });
+  await expect(page).toHaveURL(/\/checkout\/confirmation\//);
 });
 
 test('lost checkout response is recovered after reload without another order', async ({ page }) => {

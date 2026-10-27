@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { registerCustomer } from './accountHelpers';
+import { fillDelivery, registerCustomer } from './accountHelpers';
 
 async function addFeeder(page: Page) {
   await page.goto('/products');
@@ -12,13 +12,7 @@ async function reviewOrder(page: Page) {
   await registerCustomer(page);
   await page.goto('/cart');
   await page.getByRole('link', { name: 'Continue to checkout', exact: true }).click();
-  await page.getByLabel('Full name').fill('Cat Keeper');
-  await page.getByLabel('Email', { exact: true }).fill('keeper@example.com');
-  await page.getByLabel('Street address').fill('1 Cat Lane');
-  await page.getByLabel('City', { exact: true }).fill('London');
-  await page.getByLabel('Postal code').fill('N1 1AA');
-  await page.getByLabel('Country', { exact: true }).fill('UK');
-  await page.getByLabel('Ordering branch').selectOption({ index: 1 });
+  await fillDelivery(page);
   await page.getByRole('button', { name: 'Review order', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Review your order', exact: true })).toBeVisible();
 }
@@ -104,6 +98,7 @@ test('cart and checkout remain usable at 320px and support dark mode', async ({ 
   await expect(page.getByRole('link', { name: 'Continue to checkout', exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.getByRole('link', { name: 'Continue to checkout', exact: true }).click();
-  await expect(page.getByLabel('Full name')).toBeVisible();
+  await expect(page.getByLabel('Street address')).toBeVisible();
+  await expect(page.getByLabel('Full name')).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
