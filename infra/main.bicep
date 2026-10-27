@@ -127,6 +127,8 @@ module api 'modules/containerapp.bicep' = if (deployApps) {
     environmentId: environment.outputs.environmentId
     image: '${registry.outputs.loginServer}/api:${imageTag}'
     targetPort: 3000
+    livenessPath: '/api/health/live'
+    readinessPath: '/api/health/ready'
     registryLoginServer: registry.outputs.loginServer
     pullIdentityId: pullIdentity.id
     databaseStorageName: databaseMount.name

@@ -16,9 +16,13 @@ import customerRoutes from './routes/customer';
 import { protectOrigin } from './utils/auth';
 import { initializeDatabase } from './init-db';
 import { errorHandler } from './utils/errors';
+import healthRoutes from './routes/health';
+import { requestLogging } from './utils/requestLogging';
 
 const app = express();
 const port = process.env.PORT || 3000;
+app.use(requestLogging);
+app.use('/api/health', healthRoutes);
 
 // Parse CORS origins from environment variable if available
 const corsOrigins = process.env.API_CORS_ORIGINS

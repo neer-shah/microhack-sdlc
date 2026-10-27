@@ -145,6 +145,27 @@ jobs:
           host=$(az containerapp show -g "$RESOURCE_GROUP" -n "$FRONTEND_APP" --query properties.configuration.ingress.fqdn -o tsv)
           echo "url=https://$host" >> "$GITHUB_OUTPUT"
 
+      - name: Configure health probes and verify log collection
+        run: |
+          set -euo pipefail
+          python3 scripts/configure-probes.py --resource-group "$RESOURCE_GROUP" --app "$API_APP" \
+            --port 3000 --live /api/health/live --ready /api/health/ready
+          python3 scripts/configure-probes.py --resource-group "$RESOURCE_GROUP" --app "$FRONTEND_APP" \
+            --port 80 --live /healthz --ready /readyz
+          environment=$(az containerapp show -g "$RESOURCE_GROUP" -n "$API_APP" --query properties.managedEnvironmentId -o tsv)
+          destination=$(az resource show --ids "$environment" --api-version 2024-03-01 \
+            --query properties.appLogsConfiguration.destination -o tsv)
+          workspace=$(az resource show --ids "$environment" --api-version 2024-03-01 \
+            --query properties.appLogsConfiguration.logAnalyticsConfiguration.customerId -o tsv)
+          if [[ "$destination" != "log-analytics" || -z "$workspace" ]]; then
+            echo "::error::Container Apps environment must have Log Analytics collection enabled. See infra/README.md."
+            exit 1
+          fi
+          for app in "$API_APP" "$FRONTEND_APP"; do
+            id=$(az containerapp show -g "$RESOURCE_GROUP" -n "$app" --query id -o tsv)
+            az monitor metrics list-definitions --resource "$id" --query "[].name.value" -o json
+          done
+
       - name: Verify frontend and proxied API
         env:
           FRONTEND_URL: ${{ steps.frontend.outputs.url }}
@@ -154,6 +175,8 @@ jobs:
             --max-time 20 "$FRONTEND_URL/" --output /dev/null
           curl --fail --silent --show-error --retry 18 --retry-all-errors --retry-delay 10 \
             --max-time 20 "$FRONTEND_URL/api/products" --output /dev/null
+          curl --fail --silent --show-error --retry 18 --retry-all-errors --retry-delay 10 \
+            --max-time 20 "$FRONTEND_URL/api/health/ready" --output /dev/null
           node --input-type=module <<'JS'
           const base = process.env.FRONTEND_URL;
           const request = (path, options = {}) => fetch(`${base}${path}`, {
@@ -165,6 +188,16 @@ jobs:
           }
           const products = await request('/api/products');
           if (!products.ok || !Array.isArray(await products.json())) throw new Error('Product API failed');
+          for (const [path, status] of [
+            ['/api/health/live', 'ok'], ['/api/health/ready', 'ready'], ['/healthz', 'ok'],
+          ]) {
+            const response = await request(path);
+            if (!response.ok || (await response.json()).status !== status) {
+              throw new Error(`Health verification failed: ${path}`);
+            }
+          }
+          const ready = await request('/readyz');
+          if (!ready.ok) throw new Error('Frontend readiness failed');
           const session = await request('/api/auth/me');
           if (session.status !== 401) throw new Error(`Unauthenticated session returned ${session.status}, expected 401`);
           const login = await request('/api/auth/login', {
@@ -173,7 +206,7 @@ jobs:
             body: JSON.stringify({ email: `ci-${crypto.randomUUID()}@example.invalid`, password: crypto.randomUUID() }),
           });
           if (login.status !== 401) throw new Error(`Unknown-account login returned ${login.status}, expected 401`);
-          console.log('Frontend, products, private-session guard and invalid-login checks passed.');
+          console.log('Frontend, products, health/readiness, private-session guard and invalid-login checks passed.');
           JS
           printf '## Deployment verified\n\nFrontend: %s\n\nAPI stays internal; requests use the frontend proxy.\n\nImage tag: `%s`\n' \
             "$FRONTEND_URL" "$IMAGE_TAG" >> "$GITHUB_STEP_SUMMARY"

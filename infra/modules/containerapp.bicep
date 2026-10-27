@@ -8,6 +8,8 @@ param pullIdentityId string
 param databaseStorageName string = ''
 param env array = []
 param tags object = {}
+param livenessPath string = '/healthz'
+param readinessPath string = '/readyz'
 
 resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
   name: appName
@@ -52,10 +54,25 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
           env: env
           probes: [
             {
+              type: 'Startup'
+              httpGet: { path: livenessPath, port: targetPort }
+              periodSeconds: 5
+              timeoutSeconds: 2
+              failureThreshold: 60
+            }
+            {
+              type: 'Liveness'
+              httpGet: { path: livenessPath, port: targetPort }
+              periodSeconds: 10
+              timeoutSeconds: 2
+              failureThreshold: 3
+            }
+            {
               type: 'Readiness'
-              httpGet: { path: '/', port: targetPort }
+              httpGet: { path: readinessPath, port: targetPort }
               periodSeconds: 10
               timeoutSeconds: 5
+              failureThreshold: 3
             }
           ]
           volumeMounts: empty(databaseStorageName) ? [] : [

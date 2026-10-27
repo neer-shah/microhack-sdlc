@@ -105,7 +105,60 @@ SQLite data may reset during redeployment. The workflow requires explicit
 acknowledgement each run and does not migrate or preserve that data. Use only demo
 data. Azure SQL work is paused; the application continues to use SQLite.
 
-## Troubleshooting
+## Logs, metrics and health
+
+The API emits JSON `http_request` console records with a generated request ID,
+method, HTTP status and duration in milliseconds. Responses include `X-Request-ID`.
+Request bodies, credentials, query strings and cookies are not logged. Startup
+and database initialization messages also go to the console. nginx emits access
+and error logs through the official image's stdout/stderr links.
+
+Health endpoints (no sign-in required, responses are not cached):
+
+| Endpoint | Meaning |
+| --- | --- |
+| `/api/health/live` | API process responds; no database check |
+| `/api/health/ready` | Required products, users and carts tables can be queried; HTTP 503 on failure |
+| `/healthz` | nginx process responds |
+| `/readyz` | nginx can serve the frontend index |
+
+API endpoints are reachable through the frontend's same-origin `/api` proxy;
+the internal API is not made public. Frontend readiness intentionally does not
+depend on the API. The workflow separately verifies both dependencies.
+
+Both Bicep and the redeploy workflow configure startup, liveness and readiness
+HTTP probes. Startup allows up to 60 failures at five-second intervals; liveness
+checks the process only, so database outages remove readiness rather than cause
+restart loops. GitHub Actions uses `scripts/configure-probes.py` to preserve the
+existing app template while adding probes. This creates a revision; demo SQLite
+data can reset, as acknowledged by the workflow.
+
+Container Apps platform metrics (requests, CPU, memory, replicas, restarts) are
+available automatically in **Container App > Monitoring > Metrics**; no
+Application Insights SDK or diagnostic export is required to collect them.
+These are platform metrics, not custom business metrics or distributed tracing.
+The workflow confirms metric definitions exist. Empty series are not evidence of
+successful collection: generate traffic, then check recent metric samples after
+Azure's ingestion delay.
+
+The environment must send console/system logs to Log Analytics. Bicep configures
+this destination; the redeploy workflow verifies it and fails if missing.
+In **Container Apps Environment > Monitoring > Logs**, use:
+
+```kusto
+ContainerAppConsoleLogs_CL
+| where TimeGenerated > ago(30m)
+| where ContainerAppName_s in ("octo0039-lab-api", "octo0039-lab-frontend")
+| project TimeGenerated, ContainerAppName_s, Log_s
+| order by TimeGenerated desc
+```
+
+In the portal check **Revisions and replicas** for probe/revision health and
+**Log stream** for live logs. After deploying, visit the four health paths and
+`/api/products`, then verify new log records and request metrics. A successful
+IaC deployment alone does not confirm telemetry ingestion.
+
+## Deployment troubleshooting
 
 If `Microsoft.App/register/action` (or another provider registration) is denied,
 ask your subscription administrator or lab facilitator to register the following
