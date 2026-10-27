@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import closing
 from pathlib import Path
 import sqlite3
 from uuid import uuid4
@@ -9,16 +10,13 @@ import aiosqlite
 import pytest
 from fastapi.testclient import TestClient
 
-from main import app
-
-
-@pytest.fixture
-def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    source_root = Path(__file__).resolve().parents[2]
-    monkeypatch.setenv("DB_FILE", str(tmp_path / "carts.db"))
-    monkeypatch.setenv("DB_MIGRATIONS_DIR", str(source_root / "database" / "migrations"))
-    with TestClient(app, raise_server_exceptions=False) as test_client:
-        yield test_client
+def sign_in(client: TestClient) -> str:
+    response = client.post(
+        "/api/auth/register",
+        json={"name": "Ada Cat", "email": "ada@example.com", "password": "correct-password"},
+    )
+    assert response.status_code == 201
+    return response.json()["cartId"]
 
 
 def delivery() -> dict[str, str]:
@@ -61,7 +59,7 @@ def test_cart_persists_across_tabs_and_mutations_return_authoritative_prices(
         "totalCents": 0,
         "itemCount": 0,
     }
-    with sqlite3.connect(tmp_path / "carts.db") as connection:
+    with closing(sqlite3.connect(tmp_path / "carts.db")) as connection:
         assert connection.execute("SELECT COUNT(*) FROM carts WHERE cart_id = ?", (cart_id,)).fetchone()[0] == 0
     added = client.post(
         f"/api/carts/{cart_id}/items",
@@ -117,6 +115,7 @@ def test_cart_validation_and_missing_entities(client: TestClient) -> None:
         json={"quantity": 1},
     ).status_code == 404
     assert client.delete(f"/api/carts/{cart_id}/items/1").status_code == 404
+    sign_in(client)
     assert client.post(
         f"/api/carts/{cart_id}/checkout",
         json=checkout_payload(
@@ -130,7 +129,7 @@ def test_cart_validation_and_missing_entities(client: TestClient) -> None:
 def test_checkout_is_atomic_idempotent_and_confirmation_is_persistent(
     client: TestClient, tmp_path: Path
 ) -> None:
-    cart_id = str(uuid4())
+    cart_id = sign_in(client)
     client.post(
         f"/api/carts/{cart_id}/items",
         json={"productId": 1, "quantity": 2},
@@ -183,7 +182,7 @@ def test_checkout_is_atomic_idempotent_and_confirmation_is_persistent(
 
 
 def test_checkout_rejects_stale_empty_invalid_and_conflicting_requests(client: TestClient) -> None:
-    cart_id = str(uuid4())
+    cart_id = sign_in(client)
     assert client.post(
         f"/api/carts/{cart_id}/checkout",
         json=checkout_payload(
@@ -227,7 +226,7 @@ def test_checkout_rejects_stale_empty_invalid_and_conflicting_requests(client: T
 def test_checkout_rolls_back_order_when_order_detail_insert_fails(
     client: TestClient, tmp_path: Path
 ) -> None:
-    cart_id = str(uuid4())
+    cart_id = sign_in(client)
     client.post(
         f"/api/carts/{cart_id}/items",
         json={"productId": 1, "quantity": 1},

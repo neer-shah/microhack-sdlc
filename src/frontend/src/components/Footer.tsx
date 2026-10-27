@@ -41,9 +41,9 @@ const Footer: React.FC = () => {
                 </a>
               </li>
               <li>
-                <a href="#" className="hover:text-primary">
+                <Link to="/orders" className="hover:text-primary">
                   Order
-                </a>
+                </Link>
               </li>
               <li>
                 <a href="#" className="hover:text-primary">

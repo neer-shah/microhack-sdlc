@@ -9,7 +9,8 @@
  * @swagger
  * /api/orders:
  *   get:
- *     summary: Returns all orders
+ *     summary: Return the current customer's orders (admins can list all)
+ *     security: [{ CustomerSession: [] }]
  *     tags: [Orders]
  *     responses:
  *       200:
@@ -21,7 +22,8 @@
  *               items:
  *                 $ref: '#/components/schemas/Order'
  *   post:
- *     summary: Create a new order
+ *     summary: Create an order (admin only; customers use cart checkout)
+ *     security: [{ CustomerSession: [] }]
  *     tags: [Orders]
  *     requestBody:
  *       required: true
@@ -40,6 +42,7 @@
  * /api/orders/{id}:
  *   get:
  *     summary: Get an order by ID
+ *     security: [{ CustomerSession: [] }]
  *     tags: [Orders]
  *     parameters:
  *       - in: path
@@ -58,7 +61,8 @@
  *       404:
  *         description: Order not found
  *   put:
- *     summary: Update an order
+ *     summary: Update an order (admin only)
+ *     security: [{ CustomerSession: [] }]
  *     tags: [Orders]
  *     parameters:
  *       - in: path
@@ -83,7 +87,8 @@
  *       404:
  *         description: Order not found
  *   delete:
- *     summary: Delete an order
+ *     summary: Delete an order (admin only)
+ *     security: [{ CustomerSession: [] }]
  *     tags: [Orders]
  *     parameters:
  *       - in: path
@@ -103,8 +108,10 @@ import express from 'express';
 import { Order } from '../models/order';
 import { getOrdersRepository } from '../repositories/ordersRepo';
 import { handleDatabaseError, NotFoundError } from '../utils/errors';
+import { orderAccess } from '../utils/orderAccess';
 
 const router = express.Router();
+router.use(orderAccess(false));
 
 // Create a new order
 router.post('/', async (req, res, next) => {

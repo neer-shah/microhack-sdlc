@@ -3,12 +3,14 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import cartRouter from './cart';
+import authRouter from './auth';
 import { closeDatabase, getDatabase } from '../db/sqlite';
 import { runMigrations } from '../db/migrate';
 import { errorHandler } from '../utils/errors';
 
 let app: express.Express;
 let cartId: string;
+let sessionCookie = '';
 const delivery = { name: 'Cat Keeper', email: 'keeper@example.com', address: '1 Cat Lane', city: 'London', postalCode: 'N1 1AA', country: 'UK' };
 
 beforeEach(async () => {
@@ -23,7 +25,10 @@ beforeEach(async () => {
     VALUES (1, 1, 'Feeder', 19.99, 0.1, 'F1', 'each'), (2, 1, 'Camera', 10, 0, 'C1', 'each');
   `);
   app = express();
+  sessionCookie = '';
   app.use(express.json());
+  app.use((req, _res, next) => { if (sessionCookie) req.headers.cookie = sessionCookie; next(); });
+  app.use('/api/auth', authRouter);
   app.use('/api/carts', cartRouter);
   app.use(errorHandler);
   cartId = randomUUID();
@@ -31,6 +36,14 @@ beforeEach(async () => {
 afterEach(() => closeDatabase());
 const url = () => `/api/carts/${cartId}`;
 const add = (productId = 1, quantity = 2) => request(app).post(`${url()}/items`).send({ productId, quantity });
+const signIn = async () => {
+  const response = await request(app).post('/api/auth/register').send({
+    name: 'Cat Keeper', email: 'keeper@example.com', password: 'a-valid-test-password', guestCartId: cartId,
+  });
+  expect(response.status).toBe(201);
+  sessionCookie = response.headers['set-cookie'][0].split(';')[0];
+  cartId = response.body.cartId;
+};
 
 describe('Cart API', () => {
   it('returns an empty cart, persists items, merges quantities, sets and deletes items', async () => {
@@ -62,6 +75,7 @@ describe('Cart API', () => {
   });
 
   it('creates an atomic order with authoritative discounted prices and an immutable receipt; retries are idempotent', async () => {
+    await signIn();
     const cart = (await add()).body;
     const body = { checkoutId: randomUUID(), branchId: 1, delivery, expectedVersion: cart.version, expectedTotalCents: cart.totalCents };
     const placed = await request(app).post(`${url()}/checkout`).send(body);
@@ -80,6 +94,7 @@ describe('Cart API', () => {
   });
 
   it('rejects stale cart, changed prices, invalid branch and empty checkout', async () => {
+    await signIn();
     const cart = (await add()).body;
     const body = { checkoutId: randomUUID(), branchId: 1, delivery, expectedVersion: cart.version, expectedTotalCents: cart.totalCents };
     expect((await request(app).post(`${url()}/checkout`).send({ ...body, expectedVersion: 0 })).status).toBe(409);
@@ -91,6 +106,7 @@ describe('Cart API', () => {
   });
 
   it('rolls back the order and retains the cart if a line insert fails', async () => {
+    await signIn();
     const cart = (await add()).body;
     const db = (await getDatabase()).db;
     db.exec("CREATE TRIGGER reject_detail BEFORE INSERT ON order_details BEGIN SELECT RAISE(ABORT, 'test failure'); END");
@@ -103,6 +119,7 @@ describe('Cart API', () => {
   });
 
   it('rejects malformed delivery and client-submitted prices', async () => {
+    await signIn();
     expect((await request(app).post(`${url()}/items`).send({ productId: 1, quantity: 1, unitPriceCents: 1 })).status).toBe(400);
     const cart = (await add(1, 1)).body;
     expect(cart.totalCents).toBe(1799);

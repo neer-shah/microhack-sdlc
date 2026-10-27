@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { registerCustomer } from './accountHelpers';
 
 async function addFeeder(page: Page) {
   await page.goto('/products');
@@ -8,6 +9,7 @@ async function addFeeder(page: Page) {
 }
 
 async function reviewOrder(page: Page) {
+  await registerCustomer(page);
   await page.goto('/cart');
   await page.getByRole('link', { name: 'Continue to checkout', exact: true }).click();
   await page.getByLabel('Full name').fill('Cat Keeper');
@@ -77,7 +79,7 @@ test('a failed add keeps the selected quantity and shows an actionable error', a
   await expect(page.getByRole('link', { name: 'Cart, 0 items', exact: true })).toBeVisible();
 });
 
-test('retrying a lost checkout response recovers the original order confirmation', async ({ page }) => {
+test('a lost checkout response automatically recovers the original order confirmation', async ({ page }) => {
   await addFeeder(page);
   await reviewOrder(page);
   let originalOrderId: number | undefined;
@@ -88,8 +90,6 @@ test('retrying a lost checkout response recovers the original order confirmation
     await route.abort('failed');
   }, { times: 1 });
   await page.getByRole('button', { name: 'Place order', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Retry / check order', exact: true })).toBeEnabled();
-  await page.getByRole('button', { name: 'Retry / check order', exact: true }).click();
   await expect(page).toHaveURL(/\/checkout\/confirmation\//);
   await expect(page.getByText(`Order #${originalOrderId} / Pending`, { exact: true })).toBeVisible();
 });

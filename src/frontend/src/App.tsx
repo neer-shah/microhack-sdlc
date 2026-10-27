@@ -5,7 +5,7 @@ import About from './components/About';
 import Footer from './components/Footer';
 import Products from './components/entity/product/Products';
 import Login from './components/Login';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import AdminProducts from './components/admin/AdminProducts';
 import { useTheme } from './context/ThemeContext';
@@ -13,10 +13,13 @@ import { CartProvider, CartFeedback } from './context/CartContext';
 import CartPage from './components/cart/Cart';
 import Checkout from './components/cart/Checkout';
 import Confirmation from './components/cart/Confirmation';
+import Orders from './components/Orders';
+import RequireSignIn from './components/RequireSignIn';
 
 // Wrapper component to apply theme classes
 function ThemedApp() {
   const { darkMode } = useTheme();
+  const { session } = useAuth();
 
   return (
     <Router>
@@ -30,9 +33,11 @@ function ThemedApp() {
             <Route path="/about" element={<About />} />
             <Route path="/products" element={<Products />} />
             <Route path="/cart" element={<CartPage />} />
-            <Route path="/checkout" element={<Checkout />} />
-            <Route path="/checkout/confirmation/:cartId/:checkoutId" element={<Confirmation />} />
+            <Route path="/checkout" element={<Checkout key={session?.user.userId ?? 'guest'} />} />
+            <Route path="/checkout/confirmation/:cartId/:checkoutId" element={<RequireSignIn><Confirmation /></RequireSignIn>} />
             <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Login register />} />
+            <Route path="/orders" element={<RequireSignIn><Orders /></RequireSignIn>} />
             <Route path="/admin/products" element={<AdminProducts />} />
           </Routes>
         </main>

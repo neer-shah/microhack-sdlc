@@ -1,14 +1,16 @@
-import axios from 'axios';
 import { useQuery } from 'react-query';
 import { Link, useParams } from 'react-router-dom';
 import { type CheckoutReceipt, cartError, cartUrl } from '../../api/cart';
 import { CommerceLayout, OrderSummary, actionClass, secondaryClass } from './CommerceLayout';
+import { http } from '../../api/auth';
+import { useAuth } from '../../context/AuthContext';
 
 export default function Confirmation() {
   const { cartId, checkoutId } = useParams();
-  const receipt = useQuery(['checkout', cartId, checkoutId], async () => {
+  const { session } = useAuth();
+  const receipt = useQuery(['checkout', session?.user.userId, cartId, checkoutId], async () => {
     if (!cartId || !checkoutId) {throw new Error('The order confirmation link is incomplete.');}
-    const { data } = await axios.get<CheckoutReceipt>(`${cartUrl(cartId)}/checkouts/${encodeURIComponent(checkoutId)}`);
+    const { data } = await http.get<CheckoutReceipt>(`${cartUrl(cartId)}/checkouts/${encodeURIComponent(checkoutId)}`);
     return data;
   }, { retry: 1 });
   return (
@@ -33,7 +35,7 @@ export default function Confirmation() {
                 {receipt.data.delivery.country}
               </address>
             </section>
-            <Link to="/products" className={actionClass}>Continue shopping</Link>
+            <div className="flex flex-wrap gap-4"><Link to="/products" className={actionClass}>Continue shopping</Link><Link to="/orders" className={secondaryClass}>My orders</Link></div>
           </div>
           <OrderSummary items={receipt.data.items} totalCents={receipt.data.totalCents} />
         </div>

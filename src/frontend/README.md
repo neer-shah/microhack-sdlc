@@ -2,6 +2,31 @@
 
 ## Cart and checkout
 
+### Customer accounts and checkout recovery
+
+- `/register` stores a name, normalized unique email and scrypt-hashed password
+  in the selected backend's SQLite database. Passwords must contain 12-128
+  characters. There is no email verification or password reset yet.
+- `/login` uses the real API, not the former demo credential/domain check.
+  Sessions use seven-day HttpOnly cookies; no password or session token is
+  stored in browser JavaScript storage. New accounts are always customers.
+- Guest browsing and carts still work. Sign-in/registration atomically merges
+  the guest cart into the account cart, without duplicating a consumed guest
+  cart. Signed-in carts follow the account on other devices. Signing out gives
+  this browser a fresh guest cart and clears private cached data/drafts.
+- You must sign in before placing an order. `/orders` lists your latest 100
+  orders, and confirmation pages require their owner's session.
+- Delivery fields, branch selection, review and the checkout idempotency ID
+  are saved per account in **session storage**. They survive refresh/navigation
+  in the same tab, not closing the tab. Guest delivery drafts transfer on
+  sign-in; sign-out clears them. No credentials are saved in checkout drafts.
+- After an interrupted placement, checkout looks up the saved receipt. If
+  the request committed, it opens the original confirmation; otherwise you
+  can retry with the same ID. It does not automatically place another order.
+- Use the **same hostname** for the frontend and API (`localhost` for both,
+  or `127.0.0.1` for both). Different ports are supported by credentialed CORS.
+  Unrelated production domains need a same-site proxy/domain arrangement.
+
 Both the TypeScript and Python APIs support the same cart flow:
 
 - Product **Add to Cart** saves items through `/api/carts`.
@@ -18,9 +43,10 @@ Both the TypeScript and Python APIs support the same cart flow:
   response can be retried without creating a duplicate order.
 - `/checkout/confirmation/{cartId}/{checkoutId}` reloads the saved receipt.
 
-This is a guest/demo flow: no real payments, email, shipping fees, tax or stock
-reservation. Carts are browser-specific, not linked to the demo login or shared
-across devices. Clearing site storage loses the guest cart identifier.
+There are no real payments, email, shipping fees, tax or stock reservation.
+Clearing local storage loses the guest cart identifier; signed-in carts remain
+in the account database. Existing orders placed before customer accounts were
+introduced are not automatically assigned to any new account.
 
 For browser tests, start the chosen API and frontend using the existing Make
 targets, then run `npm run test:e2e -- cart.spec.ts` from this directory. To use

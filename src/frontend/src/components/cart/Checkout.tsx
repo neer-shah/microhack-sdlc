@@ -1,11 +1,14 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useMutation, useQuery } from 'react-query';
 import { api } from '../../api/config';
-import { type Cart, type CheckoutReceipt, type CheckoutRequest, type DeliveryDetails, cartError, cartUrl } from '../../api/cart';
+import { type CheckoutReceipt, type DeliveryDetails, cartError, cartUrl } from '../../api/cart';
 import { useCart } from '../../context/CartContext';
 import { CommerceLayout, OrderSummary, actionClass, inputClass, secondaryClass } from './CommerceLayout';
+import { useAuth } from '../../context/AuthContext';
+import { http } from '../../api/auth';
+import { draftKey, readDraft, saveDraft, type CheckoutDraft } from '../../api/checkoutRecovery';
 
 interface Branch { branchId: number; name: string }
 const initialDelivery: DeliveryDetails = { name: '', email: '', address: '', city: '', postalCode: '', country: '' };
@@ -17,26 +20,53 @@ const autocomplete: Record<keyof DeliveryDetails, string> = {
 };
 
 export default function Checkout() {
+  const auth = useAuth();
+  const userId = auth.session?.user.userId;
   const { cart, loading, busy, error, notifyChanged } = useCart();
-  const [delivery, setDelivery] = useState(initialDelivery);
-  const [branchId, setBranchId] = useState('');
-  const [review, setReview] = useState<{ cart: Cart; request: CheckoutRequest } | null>(null);
+  const [restored] = useState(() => {
+    try { return { draft: readDraft(userId), error: '' }; }
+    catch (error) { return { draft: null, error: cartError(error) }; }
+  });
+  const [delivery, setDelivery] = useState(restored.draft?.delivery ?? initialDelivery);
+  const [branchId, setBranchId] = useState(restored.draft?.branchId ?? '');
+  const [review, setReview] = useState<CheckoutDraft['review']>(restored.draft?.review ?? null);
+  const [submitted, setSubmitted] = useState(restored.draft?.submitted ?? false);
+  const [storageError, setStorageError] = useState(restored.error);
   const navigate = useNavigate();
+  useEffect(() => {
+    if (auth.loading || storageError) {return;}
+    try { saveDraft(userId, { delivery, branchId, review, submitted }); }
+    catch (error) { setStorageError(`Checkout recovery is unavailable: ${cartError(error)}`); }
+  }, [delivery, branchId, review, submitted, userId, storageError, auth.loading]);
+  const confirmed = (receipt: CheckoutReceipt) => {
+    sessionStorage.removeItem(draftKey(userId));
+    notifyChanged();
+    navigate(`/checkout/confirmation/${receipt.cartId}/${receipt.checkoutId}`, { replace: true });
+  };
+  const recovery = useQuery(['recover-checkout', userId, review?.request.checkoutId], async () => {
+    if (!review) {throw new Error('No checkout to recover');}
+    try {
+      return (await http.get<CheckoutReceipt>(`${cartUrl(review.cart.cartId)}/checkouts/${review.request.checkoutId}`)).data;
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) {return null;}
+      throw error;
+    }
+  }, { enabled: !!auth.session && submitted && !!review, retry: 1, onSuccess: (receipt) => { if (receipt) {confirmed(receipt);} } });
   const branches = useQuery('checkout-branches', async () => {
-    const { data } = await axios.get<Branch[]>(`${api.baseURL}${api.endpoints.branches}`);
+    const { data } = await http.get<Branch[]>(`${api.baseURL}${api.endpoints.branches}`);
     return data;
   });
   const checkout = useMutation(async () => {
     if (!review) {throw new Error('Review your order before placing it.');}
-    const { data } = await axios.post<CheckoutReceipt>(`${cartUrl(review.cart.cartId)}/checkout`, review.request);
+    if (!auth.session) {throw new Error('Sign in before placing your order.');}
+    saveDraft(userId, { delivery, branchId, review, submitted: true });
+    setSubmitted(true);
+    const { data } = await http.post<CheckoutReceipt>(`${cartUrl(review.cart.cartId)}/checkout`, review.request);
     return data;
   }, {
     retry: false,
-    onSuccess: (receipt) => {
-      notifyChanged();
-      navigate(`/checkout/confirmation/${receipt.cartId}/${receipt.checkoutId}`, { replace: true });
-    },
-    onError: () => { notifyChanged(); },
+    onSuccess: confirmed,
+    onError: () => { notifyChanged(); void recovery.refetch(); },
   });
   const changed = !!review && !!cart && (review.cart.version !== cart.version || review.cart.totalCents !== cart.totalCents);
   const startReview = (event: FormEvent<HTMLFormElement>) => {
@@ -44,7 +74,13 @@ export default function Checkout() {
     if (!cart || !cart.items.length) {
       return;
     }
+    saveDraft(userId, { delivery, branchId, review: null, submitted: false });
+    if (!auth.session) {
+      navigate('/login?returnTo=%2Fcheckout');
+      return;
+    }
     checkout.reset();
+    setSubmitted(false);
     setReview({
       cart,
       request: {
@@ -66,7 +102,18 @@ export default function Checkout() {
     <CommerceLayout title={review ? 'Review your order' : 'Where should it go?'} step={review ? 2 : 1}>
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div>
-          {!!checkout.error && <p role="alert" className="border border-red-400 rounded-lg p-4 mb-6">{cartError(checkout.error)}</p>}
+          {storageError && <div role="alert" className="border border-red-400 rounded-lg p-4 mb-6">
+            <p>{storageError}</p><p className="mt-2">Checkout must save a recovery ID before placing an order.</p>
+            <button type="button" className={`${secondaryClass} mt-3`} onClick={() => {
+              try {
+                if (restored.error) { sessionStorage.removeItem(draftKey(userId)); setReview(null); setSubmitted(false); }
+                saveDraft(userId, { delivery, branchId, review: restored.error ? null : review, submitted: restored.error ? false : submitted });
+                setStorageError('');
+              } catch (error) { setStorageError(cartError(error)); }
+            }}>{restored.error ? 'Discard invalid draft' : 'Retry saving checkout'}</button>
+          </div>}
+          {(!!checkout.error || !!recovery.error) && <p role="alert" className="border border-red-400 rounded-lg p-4 mb-6">{cartError(checkout.error ?? recovery.error)}</p>}
+          {submitted && recovery.isFetching && <p role="status" className="mb-4">Checking whether your order was already placed…</p>}
           {changed && <p role="alert" className="border border-primary rounded-lg p-4 mb-6">Your cart or its prices changed in another tab. Return to delivery details and review the latest cart before ordering.</p>}
           {review ? (
             <section aria-label="Delivery review" className="space-y-6">
@@ -82,10 +129,12 @@ export default function Checkout() {
                 <p className="mt-4"><strong>Ordering branch:</strong> {branches.data?.find((branch) => branch.branchId === review.request.branchId)?.name}</p>
               </div>
               <p>Placing this order saves it as pending. This demo does not collect payment or send a confirmation email.</p>
-              <button className={secondaryClass} disabled={checkout.isLoading} onClick={() => { setReview(null); checkout.reset(); }}>Edit delivery / review latest cart</button>
+              <button className={secondaryClass} disabled={checkout.isLoading || (submitted && (recovery.isFetching || recovery.data !== null))} onClick={() => { setReview(null); setSubmitted(false); checkout.reset(); }}>Edit delivery / review latest cart</button>
             </section>
           ) : (
-            <form id="delivery-form" onSubmit={startReview} className="space-y-5">
+            <form id="delivery-form" onSubmit={(event) => {
+              try { startReview(event); } catch (error) { setStorageError(cartError(error)); }
+            }} className="space-y-5">
               <h2 className="text-xl font-bold">Delivery details</h2>
               <div className="grid sm:grid-cols-2 gap-5">
                 {(Object.keys(labels) as (keyof DeliveryDetails)[]).map((field) => (
@@ -109,12 +158,13 @@ export default function Checkout() {
         </div>
         <OrderSummary items={summary.items} totalCents={summary.totalCents}>
           {review ? (
-            <button type="button" className={`${actionClass} w-full mt-6`} disabled={checkout.isLoading || busy || (changed && !checkout.error) || !!error} onClick={() => checkout.mutate()}>
-              {checkout.isLoading ? 'Placing order…' : checkout.error ? 'Retry / check order' : 'Place order'}
+            <button type="button" className={`${actionClass} w-full mt-6`} disabled={checkout.isLoading || busy || (changed && !submitted) || !!error || !!storageError || !auth.session || recovery.isFetching} onClick={() => checkout.mutate()}>
+              {checkout.isLoading ? 'Placing order…' : submitted ? 'Retry / check order' : 'Place order'}
             </button>
           ) : (
-            <button form="delivery-form" type="submit" className={`${actionClass} w-full mt-6`} disabled={busy || !!error || branches.isLoading || !!branches.error || !branches.data?.length}>Review order</button>
+            <button form="delivery-form" type="submit" className={`${actionClass} w-full mt-6`} disabled={busy || !!error || !!storageError || branches.isLoading || !!branches.error || !branches.data?.length}>{auth.session ? 'Review order' : 'Sign in to continue'}</button>
           )}
+          {!auth.session && <p className="mt-4 text-sm">You must sign in or register before placing an order. Your delivery draft will be kept in this tab.</p>}
           <Link to="/cart" className="block text-center underline mt-4">Return to cart</Link>
         </OrderSummary>
       </div>

@@ -5,10 +5,18 @@ import { useState } from 'react';
 import { useCart } from '../context/CartContext';
 
 export default function Navigation() {
-  const { isLoggedIn, isAdmin, logout } = useAuth();
+  const { isLoggedIn, isAdmin, logout, session } = useAuth();
+  const [logoutError, setLogoutError] = useState('');
+  const [loggingOut, setLoggingOut] = useState(false);
   const { darkMode, toggleTheme } = useTheme();
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
   const { cart } = useCart();
+  const signOut = async () => {
+    setLoggingOut(true);
+    try { await logout(); setLogoutError(''); }
+    catch { setLogoutError('Sign-out failed. Check your connection and try again.'); }
+    finally { setLoggingOut(false); }
+  };
 
   return (
     <nav
@@ -121,17 +129,19 @@ export default function Navigation() {
             </button>
             {isLoggedIn ? (
               <>
+                <Link to="/orders" className={`text-sm font-semibold underline ${darkMode ? 'text-light' : 'text-gray-800'}`}>My orders</Link>
                 <span
                   className={`${darkMode ? 'text-light' : 'text-gray-700'} hidden sm:inline text-sm transition-colors`}
                 >
                   {isAdmin && <span className="text-primary">(Admin) </span>}
-                  Welcome!
+                  {session?.user.name}
                 </span>
                 <button
-                  onClick={logout}
+                  onClick={() => void signOut()}
+                  disabled={loggingOut}
                   className={`${darkMode ? 'text-light hover:text-primary' : 'text-gray-700 hover:text-primary'} px-3 py-2 rounded-md text-sm font-medium transition-colors`}
                 >
-                  Logout
+                  {loggingOut ? 'Signing out…' : 'Logout'}
                 </button>
               </>
             ) : (
@@ -143,6 +153,7 @@ export default function Navigation() {
               </Link>
             )}
           </div>
+          {logoutError && <p role="alert" className="bg-red-50 text-red-900 px-4 py-2">{logoutError}</p>}
         </div>
       </div>
     </nav>

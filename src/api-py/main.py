@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import os
+import re
+from collections.abc import Awaitable, Callable
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, Response
 
 from database.migrate import initialize_database
+from routes.auth import router as auth_router
 from routes.branches import router as branches_router
 from routes.carts import router as carts_router
 from routes.deliveries import router as deliveries_router
 from routes.headquarters import router as headquarters_router
+from routes.me import router as me_router
 from routes.order_detail_deliveries import router as order_detail_deliveries_router
 from routes.order_details import router as order_details_router
 from routes.orders import router as orders_router
@@ -21,7 +26,10 @@ app = FastAPI(title="OctoSupply API (Python)", version="1.0.0")
 
 configured_origins = os.getenv("API_CORS_ORIGINS")
 if configured_origins:
-    allow_origins = [origin.strip() for origin in configured_origins.split(",") if origin.strip()]
+    allow_origins = [
+        origin.strip() for origin in configured_origins.split(",")
+        if origin.strip() and origin.strip() != "*"
+    ]
     allow_origin_regex = None
 else:
     allow_origins = [
@@ -41,6 +49,23 @@ app.add_middleware(
 
 register_exception_handlers(app)
 
+
+@app.middleware("http")
+async def protect_origin(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+    origin = request.headers.get("origin")
+    if request.method not in {"GET", "HEAD", "OPTIONS"} and origin is not None:
+        if origin not in allow_origins and not (
+            allow_origin_regex and re.fullmatch(allow_origin_regex, origin)
+        ):
+            return JSONResponse(
+                status_code=403,
+                content={"error": {"code": "FORBIDDEN", "message": "Origin is not allowed"}},
+            )
+    return await call_next(request)
+
+
+app.include_router(auth_router)
+app.include_router(me_router)
 app.include_router(deliveries_router)
 app.include_router(carts_router)
 app.include_router(order_detail_deliveries_router)

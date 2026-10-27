@@ -7,15 +7,21 @@ from utils.errors import DatabaseException, NotFoundException
 
 
 class OrdersRepository:
-    async def find_all(self) -> list[Order]:
+    async def find_all(self, user_id: int | None = None) -> list[Order]:
         async with get_connection() as connection:
-            cursor = await connection.execute("SELECT * FROM orders ORDER BY order_id;")
+            cursor = await connection.execute(
+                "SELECT * FROM orders WHERE (? IS NULL OR user_id = ?) ORDER BY order_id;",
+                (user_id, user_id),
+            )
             rows = await cursor.fetchall()
         return [self._map_row(row) for row in rows]
 
-    async def find_by_id(self, order_id: int) -> Order | None:
+    async def find_by_id(self, order_id: int, user_id: int | None = None) -> Order | None:
         async with get_connection() as connection:
-            cursor = await connection.execute("SELECT * FROM orders WHERE order_id = ?;", (order_id,))
+            cursor = await connection.execute(
+                "SELECT * FROM orders WHERE order_id = ? AND (? IS NULL OR user_id = ?);",
+                (order_id, user_id, user_id),
+            )
             row = await cursor.fetchone()
         return self._map_row(row) if row else None
 

@@ -9,7 +9,8 @@
  * @swagger
  * /api/order-details:
  *   get:
- *     summary: Returns all order details
+ *     summary: Return the current customer's order details (admins can list all)
+ *     security: [{ CustomerSession: [] }]
  *     tags: [Order Details]
  *     responses:
  *       200:
@@ -21,7 +22,8 @@
  *               items:
  *                 $ref: '#/components/schemas/OrderDetail'
  *   post:
- *     summary: Create a new order detail
+ *     summary: Create an order detail (admin only)
+ *     security: [{ CustomerSession: [] }]
  *     tags: [Order Details]
  *     requestBody:
  *       required: true
@@ -40,6 +42,7 @@
  * /api/order-details/{id}:
  *   get:
  *     summary: Get an order detail by ID
+ *     security: [{ CustomerSession: [] }]
  *     tags: [Order Details]
  *     parameters:
  *       - in: path
@@ -58,7 +61,8 @@
  *       404:
  *         description: Order detail not found
  *   put:
- *     summary: Update an order detail
+ *     summary: Update an order detail (admin only)
+ *     security: [{ CustomerSession: [] }]
  *     tags: [Order Details]
  *     parameters:
  *       - in: path
@@ -83,7 +87,8 @@
  *       404:
  *         description: Order detail not found
  *   delete:
- *     summary: Delete an order detail
+ *     summary: Delete an order detail (admin only)
+ *     security: [{ CustomerSession: [] }]
  *     tags: [Order Details]
  *     parameters:
  *       - in: path
@@ -103,8 +108,10 @@ import express from 'express';
 import { OrderDetail } from '../models/orderDetail';
 import { getOrderDetailsRepository } from '../repositories/orderDetailsRepo';
 import { NotFoundError } from '../utils/errors';
+import { orderAccess } from '../utils/orderAccess';
 
 const router = express.Router();
+router.use(orderAccess(true));
 
 // Create a new order detail
 router.post('/', async (req, res, next) => {

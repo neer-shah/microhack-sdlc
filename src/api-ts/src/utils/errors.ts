@@ -34,6 +34,19 @@ export class ConflictError extends DatabaseError {
     super(`Conflict: ${message}`, 'CONFLICT', 409);
     this.name = 'ConflictError';
   }
+
+}
+
+export class UnauthorizedError extends DatabaseError {
+  constructor(message = 'Sign in to continue') {
+    super(message, 'UNAUTHORIZED', 401);
+  }
+}
+
+export class ForbiddenError extends DatabaseError {
+  constructor(message = 'You do not have permission for this action') {
+    super(message, 'FORBIDDEN', 403);
+  }
 }
 
 /**

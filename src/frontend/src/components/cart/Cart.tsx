@@ -2,11 +2,13 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { money, cartError } from '../../api/cart';
 import { useCart } from '../../context/CartContext';
+import { useAuth } from '../../context/AuthContext';
 import { CommerceLayout, OrderSummary, actionClass, secondaryClass } from './CommerceLayout';
 
 export default function CartPage() {
   const { cart, loading, busy, error, addItem, setQuantity, removeItem } = useCart();
   const [notice, setNotice] = useState('');
+  const { isLoggedIn } = useAuth();
   const update = async (operation: Promise<void>, success: string) => {
     try { await operation; setNotice(success); }
     catch (error) { setNotice(cartError(error)); }
@@ -50,7 +52,7 @@ export default function CartPage() {
           <OrderSummary items={cart.items} totalCents={cart.totalCents}>
             {busy || error ? <button className={`${actionClass} w-full mt-6`} disabled>Continue to checkout</button> :
               <Link to="/checkout" className={`${actionClass} w-full mt-6`}>Continue to checkout</Link>}
-            <p className="text-xs mt-4 opacity-80">Your cart is saved on this browser and shared across tabs.</p>
+            <p className="text-xs mt-4 opacity-80">{isLoggedIn ? 'Your cart is saved to your account, across devices.' : 'Your guest cart is saved on this browser. Sign in at checkout to place your order.'}</p>
           </OrderSummary>
         </div>
       )}

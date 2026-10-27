@@ -1,8 +1,9 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import axios from 'axios';
 import { useMutation, useQuery, useQueryClient } from 'react-query';
 import { type Cart, cartError, cartUrl } from '../api/cart';
+import { guestCartId, http } from '../api/auth';
+import { useAuth } from './AuthContext';
 
 const storageKey = 'octocat-cart-id';
 const updateKey = 'octocat-cart-updated';
@@ -24,6 +25,7 @@ interface CartContextValue {
 const CartContext = createContext<CartContextValue | undefined>(undefined);
 
 export function CartProvider({ children }: { children: ReactNode }) {
+  const auth = useAuth();
   const [identity, setIdentity] = useState<{ id: string | null; error: string | null }>(() => {
     try {
       let id = localStorage.getItem(storageKey);
@@ -40,15 +42,22 @@ export function CartProvider({ children }: { children: ReactNode }) {
     }
   });
   const [syncError, setSyncError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!auth.session && !auth.loading) {
+      try { setIdentity({ id: guestCartId(), error: null }); }
+      catch (error) { setIdentity({ id: null, error: cartError(error) }); }
+    }
+  }, [auth.session, auth.loading]);
   const client = useQueryClient();
-  const key = ['cart', identity.id];
+  const cartId = auth.session?.cartId ?? identity.id;
+  const key = ['cart', cartId];
   const query = useQuery<Cart>(key, async () => {
-    if (!identity.id) {
+    if (!cartId) {
       throw new Error(identity.error ?? 'Cart storage is unavailable');
     }
-    const { data } = await axios.get<Cart>(cartUrl(identity.id));
+    const { data } = await http.get<Cart>(cartUrl(cartId));
     return data;
-  }, { enabled: !!identity.id, refetchOnWindowFocus: true, refetchInterval: 15000, retry: 1 });
+  }, { enabled: !!cartId && !auth.loading && !auth.error, refetchOnWindowFocus: true, refetchInterval: 15000, retry: 1 });
 
   const notifyChanged = () => {
     try {
@@ -56,7 +65,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       setSyncError(`Cart saved, but tab synchronization failed: ${cartError(error)}`);
     }
-    void client.invalidateQueries(['cart', identity.id]);
+    void client.invalidateQueries(['cart', cartId]);
   };
 
   useEffect(() => {
@@ -73,40 +82,40 @@ export function CartProvider({ children }: { children: ReactNode }) {
         }
       }
       if (event.key === updateKey || event.key === null) {
-        void client.invalidateQueries(['cart', identity.id]);
+        void client.invalidateQueries(['cart', cartId]);
       }
     };
     window.addEventListener('storage', synchronize);
     return () => window.removeEventListener('storage', synchronize);
-  }, [client, identity.id]);
+  }, [client, cartId]);
 
   const mutation = useMutation(async (change: ItemChange) => {
-    if (!identity.id) {throw new Error(identity.error ?? 'Cart storage is unavailable');}
-    const url = `${cartUrl(identity.id)}/items`;
+    if (!cartId || auth.loading || auth.error) {throw new Error(identity.error ?? 'Your session or cart is unavailable. Try again.');}
+    const url = `${cartUrl(cartId)}/items`;
     const response = change.method === 'post'
-      ? await axios.post<Cart>(url, { productId: change.productId, quantity: change.quantity })
+      ? await http.post<Cart>(url, { productId: change.productId, quantity: change.quantity })
       : change.method === 'put'
-        ? await axios.put<Cart>(`${url}/${change.productId}`, { quantity: change.quantity })
-        : await axios.delete<Cart>(`${url}/${change.productId}`);
+        ? await http.put<Cart>(`${url}/${change.productId}`, { quantity: change.quantity })
+        : await http.delete<Cart>(`${url}/${change.productId}`);
     return response.data;
   }, {
-    onMutate: () => client.cancelQueries(['cart', identity.id]),
+    onMutate: () => client.cancelQueries(['cart', cartId]),
     onSuccess: (cart) => {
-      client.setQueryData(['cart', identity.id], cart);
+      client.setQueryData(['cart', cartId], cart);
       notifyChanged();
     },
-    onError: () => { void client.invalidateQueries(['cart', identity.id]); },
+    onError: () => { void client.invalidateQueries(['cart', cartId]); },
   });
   const change = async (value: ItemChange) => { await mutation.mutateAsync(value); };
 
   return (
     <CartContext.Provider value={{
-      cart: query.data, loading: query.isLoading, busy: mutation.isLoading,
-      error: identity.error ?? syncError ?? (mutation.error ? cartError(mutation.error) : query.error ? cartError(query.error) : null),
+      cart: query.data, loading: auth.loading || query.isLoading, busy: mutation.isLoading,
+      error: (auth.error ? cartError(auth.error) : null) ?? identity.error ?? syncError ?? (mutation.error ? cartError(mutation.error) : query.error ? cartError(query.error) : null),
       addItem: (productId, quantity) => change({ method: 'post', productId, quantity }),
       setQuantity: (productId, quantity) => change({ method: 'put', productId, quantity }),
       removeItem: (productId) => change({ method: 'delete', productId }),
-      refresh: async () => { mutation.reset(); setSyncError(null); await query.refetch(); },
+      refresh: async () => { mutation.reset(); setSyncError(null); await auth.refresh(); await query.refetch(); },
       notifyChanged,
     }}>
       {children}

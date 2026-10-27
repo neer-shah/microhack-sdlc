@@ -31,6 +31,21 @@ class DatabaseException(ApiException):
         super().__init__(message, "DATABASE_ERROR", 500)
 
 
+class UnauthorizedException(ApiException):
+    def __init__(self, message: str = "Sign in is required") -> None:
+        super().__init__(message, "UNAUTHORIZED", 401)
+
+
+class ForbiddenException(ApiException):
+    def __init__(self, message: str = "Administrator access is required") -> None:
+        super().__init__(message, "FORBIDDEN", 403)
+
+
+class TooManyRequestsException(ApiException):
+    def __init__(self) -> None:
+        super().__init__("Too many login attempts; try again later", "TOO_MANY_REQUESTS", 429)
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(ApiException)
     async def handle_api_exception(_: Request, exc: ApiException) -> JSONResponse:

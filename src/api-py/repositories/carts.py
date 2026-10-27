@@ -17,7 +17,9 @@ from models.cart import (
     CheckoutRequest,
     UpdateCartItemRequest,
 )
-from utils.errors import ConflictException, DatabaseException, NotFoundException, ValidationException
+from utils.errors import (
+    ConflictException, DatabaseException, NotFoundException, UnauthorizedException, ValidationException,
+)
 
 
 def normalize_cart_id(cart_id: str) -> str:
@@ -28,22 +30,20 @@ def normalize_cart_id(cart_id: str) -> str:
 
 
 class CartsRepository:
-    async def get_cart(self, cart_id: str) -> Cart:
+    async def get_cart(self, cart_id: str, user_id: int | None = None) -> Cart:
         cart_id = normalize_cart_id(cart_id)
         async with get_connection() as connection:
-            cart_cursor = await connection.execute(
-                "SELECT version FROM carts WHERE cart_id = ?;",
-                (cart_id,),
-            )
-            cart_row = await cart_cursor.fetchone()
+            await connection.execute("BEGIN;")
+            cart_row = await self._assert_access(connection, cart_id, user_id)
             items = await self._read_items(connection, cart_id)
         return self._cart_from_rows(cart_id, int(cart_row["version"]) if cart_row else 0, items)
 
-    async def add_item(self, cart_id: str, request: AddCartItemRequest) -> Cart:
+    async def add_item(self, cart_id: str, request: AddCartItemRequest, user_id: int | None = None) -> Cart:
         cart_id = normalize_cart_id(cart_id)
         async with get_connection() as connection:
             await connection.execute("BEGIN IMMEDIATE;")
             try:
+                await self._assert_access(connection, cart_id, user_id)
                 await connection.execute(
                     "INSERT INTO carts (cart_id) VALUES (?) ON CONFLICT(cart_id) DO NOTHING;",
                     (cart_id,),
@@ -73,12 +73,15 @@ class CartsRepository:
                 raise
         return self._cart_from_rows(cart_id, version, items)
 
-    async def update_item(self, cart_id: str, product_id: int, request: UpdateCartItemRequest) -> Cart:
+    async def update_item(
+        self, cart_id: str, product_id: int, request: UpdateCartItemRequest, user_id: int | None = None
+    ) -> Cart:
         cart_id = normalize_cart_id(cart_id)
         _validate_product_id(product_id)
         async with get_connection() as connection:
             await connection.execute("BEGIN IMMEDIATE;")
             try:
+                await self._assert_access(connection, cart_id, user_id)
                 item_cursor = await connection.execute(
                     "SELECT 1 FROM cart_items WHERE cart_id = ? AND product_id = ?;",
                     (cart_id, product_id),
@@ -99,12 +102,13 @@ class CartsRepository:
                 raise
         return self._cart_from_rows(cart_id, version, items)
 
-    async def remove_item(self, cart_id: str, product_id: int) -> Cart:
+    async def remove_item(self, cart_id: str, product_id: int, user_id: int | None = None) -> Cart:
         cart_id = normalize_cart_id(cart_id)
         _validate_product_id(product_id)
         async with get_connection() as connection:
             await connection.execute("BEGIN IMMEDIATE;")
             try:
+                await self._assert_access(connection, cart_id, user_id)
                 cursor = await connection.execute(
                     "DELETE FROM cart_items WHERE cart_id = ? AND product_id = ?;",
                     (cart_id, product_id),
@@ -120,19 +124,23 @@ class CartsRepository:
                 raise
         return self._cart_from_rows(cart_id, version, items)
 
-    async def checkout(self, cart_id: str, request: CheckoutRequest) -> CheckoutReceipt:
+    async def checkout(self, cart_id: str, request: CheckoutRequest, user_id: int) -> CheckoutReceipt:
         cart_id = normalize_cart_id(cart_id)
         async with get_connection() as connection:
             await connection.execute("BEGIN IMMEDIATE;")
             try:
+                await self._assert_access(connection, cart_id, user_id)
                 previous_cursor = await connection.execute(
-                    "SELECT cart_id, receipt_json FROM cart_checkouts WHERE checkout_id = ?;",
+                    """SELECT c.cart_id, c.receipt_json, o.user_id FROM cart_checkouts c
+                    JOIN orders o ON o.order_id = c.order_id WHERE c.checkout_id = ?;""",
                     (request.checkoutId,),
                 )
                 previous = await previous_cursor.fetchone()
                 if previous:
                     if previous["cart_id"] != cart_id:
                         raise ConflictException("checkoutId has already been used for another cart")
+                    if previous["user_id"] != user_id:
+                        raise NotFoundException("Checkout", request.checkoutId)
                     receipt = CheckoutReceipt.model_validate_json(previous["receipt_json"])
                     await connection.commit()
                     return receipt
@@ -164,10 +172,10 @@ class CartsRepository:
                 description = json.dumps(request.delivery.model_dump(), separators=(",", ":"))
                 order_cursor = await connection.execute(
                     """
-                    INSERT INTO orders (branch_id, order_date, name, description, status)
-                    VALUES (?, ?, ?, ?, 'pending');
+                    INSERT INTO orders (branch_id, order_date, name, description, status, user_id)
+                    VALUES (?, ?, ?, ?, 'pending', ?);
                     """,
-                    (request.branchId, placed_at, request.delivery.name, description),
+                    (request.branchId, placed_at, request.delivery.name, description, user_id),
                 )
                 order_id = int(order_cursor.lastrowid)
                 for item in cart.items:
@@ -204,21 +212,50 @@ class CartsRepository:
                 await connection.rollback()
                 raise
 
-    async def get_checkout(self, cart_id: str, checkout_id: str) -> CheckoutReceipt:
+    async def get_checkout(self, cart_id: str, checkout_id: str, user_id: int) -> CheckoutReceipt:
         cart_id = normalize_cart_id(cart_id)
         checkout_id = normalize_cart_id(checkout_id)
         async with get_connection() as connection:
+            await connection.execute("BEGIN;")
+            await self._assert_access(connection, cart_id, user_id)
             cursor = await connection.execute(
                 """
-                SELECT receipt_json FROM cart_checkouts
-                WHERE checkout_id = ? AND cart_id = ?;
+                SELECT c.receipt_json FROM cart_checkouts c JOIN orders o ON o.order_id = c.order_id
+                WHERE c.checkout_id = ? AND c.cart_id = ? AND o.user_id = ?;
                 """,
-                (checkout_id, cart_id),
+                (checkout_id, cart_id, user_id),
             )
             row = await cursor.fetchone()
         if not row:
             raise NotFoundException("Checkout", checkout_id)
         return CheckoutReceipt.model_validate_json(row["receipt_json"])
+
+    async def order_history(self, user_id: int, order_id: int | None = None) -> list[CheckoutReceipt]:
+        async with get_connection() as connection:
+            cursor = await connection.execute(
+                """SELECT c.receipt_json FROM cart_checkouts c JOIN orders o ON o.order_id = c.order_id
+                WHERE o.user_id = ? AND (? IS NULL OR o.order_id = ?)
+                ORDER BY o.order_date DESC, o.order_id DESC LIMIT 100;""",
+                (user_id, order_id, order_id),
+            )
+            rows = await cursor.fetchall()
+        return [CheckoutReceipt.model_validate_json(row["receipt_json"]) for row in rows]
+
+    @staticmethod
+    async def _assert_access(
+        connection: aiosqlite.Connection, cart_id: str, user_id: int | None
+    ) -> aiosqlite.Row | None:
+        cursor = await connection.execute("SELECT * FROM carts WHERE cart_id = ?;", (cart_id,))
+        row = await cursor.fetchone()
+        if row:
+            if row["merged_into"] is not None:
+                raise NotFoundException("Cart", cart_id)
+            if row["user_id"] is not None:
+                if user_id is None:
+                    raise UnauthorizedException()
+                if row["user_id"] != user_id:
+                    raise NotFoundException("Cart", cart_id)
+        return row
 
     @staticmethod
     async def _get_product(connection: aiosqlite.Connection, product_id: int) -> aiosqlite.Row:

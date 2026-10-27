@@ -37,9 +37,45 @@ and seeds from:
 
 ## Guest cart and checkout
 
+### Customer accounts
+
+Migration `004_add_customer_accounts.sql` adds customers, password hashes,
+hashed sessions, login throttling, and ownership of carts/orders.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| POST | `/api/auth/register` | `{name,email,password,guestCartId?}`; register and sign in |
+| POST | `/api/auth/login` | `{email,password,guestCartId?}`; sign in and merge guest cart |
+| GET | `/api/auth/me` | Current `{user,cartId}` or 401 |
+| POST | `/api/auth/logout` | Revoke session and clear cookie |
+| GET | `/api/me/orders` | Current user's latest 100 checkout receipts |
+| GET | `/api/me/orders/{id}` | Current user's receipt or 404 |
+
+Emails are normalized to lowercase and unique; passwords are 12-128 characters,
+salted and hashed with scrypt (N=16384,r=8,p=1,64-byte key). Only a SHA-256
+hash of each random session token is persisted. Cookies are HttpOnly,
+SameSite=Lax, scoped to `/api`, and last seven days. Set `NODE_ENV=production`
+or `APP_ENV=production` to require Secure cookies over HTTPS. Browser API calls
+must use credentials and a same-site frontend/API hostname. The server rejects
+unsafe requests from origins outside `API_CORS_ORIGINS` (or development defaults).
+Login is throttled after 10 failed attempts per email/client IP in 15 minutes.
+
+New users are always customers. The old frontend email-domain admin shortcut
+is removed; privileged roles require deliberate database administration.
+There is no email verification, password reset or account deletion flow yet.
+
+Account carts are private to their owner. Login/register merges guest items
+atomically and marks the source guest cart consumed. Overflow above 999 of a
+product aborts the merge without losing items. Checkout requires the owner's
+session and account cart, and records the user ID on the order. Receipts and
+order history require the matching owner. Legacy `/api/orders` and
+`/api/order-details` are authenticated, customer reads are owner-filtered, and
+writes require a real admin role; customers place orders through checkout.
+Older anonymous orders are not automatically claimed by newly registered users.
+
 The shared migration `003_add_carts.sql` adds SQLite-backed carts, cart items,
 and immutable checkout receipts. The frontend stores an unguessable guest cart
-UUID in browser local storage; it is not tied to the demo login.
+UUID in browser local storage; signed-in users use their private account cart.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -64,9 +100,9 @@ newly added items.
 
 Checkout records delivery information but does **not** process payment, send
 email, charge shipping/tax, reserve stock, or arrange delivery. Guest cart IDs
-and receipt URLs act as access capabilities: do not share them. Production use
-requires authenticated ownership, retention/cleanup, and appropriate handling
-of delivery data.
+act as access capabilities: do not share them. Receipts require the owner's
+authenticated session. Production use still requires retention/cleanup and
+appropriate handling of delivery data.
 
 ## Tests
 

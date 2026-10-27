@@ -11,6 +11,9 @@ import branchRoutes from './routes/branch';
 import headquartersRoutes from './routes/headquarters';
 import supplierRoutes from './routes/supplier';
 import cartRoutes from './routes/cart';
+import authRoutes from './routes/auth';
+import customerRoutes from './routes/customer';
+import { protectOrigin } from './utils/auth';
 import { initializeDatabase } from './init-db';
 import { errorHandler } from './utils/errors';
 
@@ -72,6 +75,7 @@ app.get('/api-docs.json', (req, res) => {
 });
 
 app.use(express.json());
+app.use('/api', protectOrigin);
 
 app.use('/api/deliveries', deliveryRoutes);
 app.use('/api/order-detail-deliveries', orderDetailDeliveryRoutes);
@@ -82,6 +86,8 @@ app.use('/api/branches', branchRoutes);
 app.use('/api/headquarters', headquartersRoutes);
 app.use('/api/suppliers', supplierRoutes);
 app.use('/api/carts', cartRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/me', customerRoutes);
 
 app.get('/', (req, res) => {
   res.send('Hello, world!');

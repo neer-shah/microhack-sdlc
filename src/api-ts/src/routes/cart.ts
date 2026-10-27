@@ -89,7 +89,8 @@
  *   post:
  *     tags: [Carts]
  *     summary: Atomically create an order and clear its cart
- *     description: Reuse checkoutId on retries to recover the same receipt without another order. No payment or email is sent.
+ *     security: [{ CustomerSession: [] }]
+ *     description: Sign in and use your account cart. Reuse checkoutId on retries to recover the same receipt without another order. No payment or email is sent.
  *     requestBody:
  *       required: true
  *       content:
@@ -102,6 +103,7 @@
  *           application/json:
  *             schema: { $ref: '#/components/schemas/CheckoutReceipt' }
  *       400: { $ref: '#/components/responses/CartInvalid' }
+ *       401: { description: Sign in before placing an order }
  *       404: { $ref: '#/components/responses/CartNotFound' }
  *       409:
  *         description: Empty cart, changed version or price, or checkout ID already used by another cart
@@ -115,6 +117,7 @@
  *   get:
  *     tags: [Carts]
  *     summary: Retrieve a saved order confirmation
+ *     security: [{ CustomerSession: [] }]
  *     responses:
  *       200:
  *         description: Immutable order receipt
@@ -129,8 +132,11 @@ import { getDatabase } from '../db/sqlite';
 import { CheckoutRequest, DeliveryDetails } from '../models/cart';
 import { CartsRepository } from '../repositories/cartsRepo';
 import { ValidationError } from '../utils/errors';
+import { currentUser, protectOrigin, requireUser } from '../utils/auth';
 
 const router = express.Router();
+router.use(protectOrigin);
+router.use((_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function uuid(value: unknown): string {
@@ -183,7 +189,7 @@ router.param('cartId', (req, _res, next, value: string) => {
 
 router.get('/:cartId', async (req, res, next) => {
   try {
-    const repo = new CartsRepository((await getDatabase()).db);
+    const repo = new CartsRepository((await getDatabase()).db, await currentUser(req));
     res.json(repo.find(uuid(req.params.cartId)));
   } catch (error) { next(error); }
 });
@@ -191,7 +197,7 @@ router.get('/:cartId', async (req, res, next) => {
 router.post('/:cartId/items', async (req, res, next) => {
   try {
     const body = object(req.body, ['productId', 'quantity']);
-    const repo = new CartsRepository((await getDatabase()).db);
+    const repo = new CartsRepository((await getDatabase()).db, await currentUser(req));
     res.json(repo.changeItem(uuid(req.params.cartId), integer(body.productId, 'productId'),
       integer(body.quantity, 'quantity', 1, 999), true));
   } catch (error) { next(error); }
@@ -200,7 +206,7 @@ router.post('/:cartId/items', async (req, res, next) => {
 router.put('/:cartId/items/:productId', async (req, res, next) => {
   try {
     const body = object(req.body, ['quantity']);
-    const repo = new CartsRepository((await getDatabase()).db);
+    const repo = new CartsRepository((await getDatabase()).db, await currentUser(req));
     res.json(repo.changeItem(uuid(req.params.cartId), integer(Number(req.params.productId), 'productId'),
       integer(body.quantity, 'quantity', 1, 999), false));
   } catch (error) { next(error); }
@@ -208,22 +214,23 @@ router.put('/:cartId/items/:productId', async (req, res, next) => {
 
 router.delete('/:cartId/items/:productId', async (req, res, next) => {
   try {
-    const repo = new CartsRepository((await getDatabase()).db);
+    const repo = new CartsRepository((await getDatabase()).db, await currentUser(req));
     res.json(repo.deleteItem(uuid(req.params.cartId), integer(Number(req.params.productId), 'productId')));
   } catch (error) { next(error); }
 });
 
 router.post('/:cartId/checkout', async (req, res, next) => {
   try {
+    const user = await requireUser(req);
     const body = checkoutRequest(req.body);
-    const repo = new CartsRepository((await getDatabase()).db);
+    const repo = new CartsRepository((await getDatabase()).db, user);
     res.status(201).json(repo.checkout(uuid(req.params.cartId), body));
   } catch (error) { next(error); }
 });
 
 router.get('/:cartId/checkouts/:checkoutId', async (req, res, next) => {
   try {
-    const repo = new CartsRepository((await getDatabase()).db);
+    const repo = new CartsRepository((await getDatabase()).db, await requireUser(req));
     res.json(repo.receipt(uuid(req.params.cartId), uuid(req.params.checkoutId)));
   } catch (error) { next(error); }
 });

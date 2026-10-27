@@ -634,7 +634,12 @@
         },
         "/api/orders": {
             "get": {
-                "summary": "Returns all orders",
+                "summary": "Return the current customer's orders (admins can list all)",
+                "security": [
+                    {
+                        "CustomerSession": []
+                    }
+                ],
                 "tags": [
                     "Orders"
                 ],
@@ -655,7 +660,12 @@
                 }
             },
             "post": {
-                "summary": "Create a new order",
+                "summary": "Create an order (admin only; customers use cart checkout)",
+                "security": [
+                    {
+                        "CustomerSession": []
+                    }
+                ],
                 "tags": [
                     "Orders"
                 ],
@@ -686,6 +696,11 @@
         "/api/orders/{id}": {
             "get": {
                 "summary": "Get an order by ID",
+                "security": [
+                    {
+                        "CustomerSession": []
+                    }
+                ],
                 "tags": [
                     "Orders"
                 ],
@@ -717,7 +732,12 @@
                 }
             },
             "put": {
-                "summary": "Update an order",
+                "summary": "Update an order (admin only)",
+                "security": [
+                    {
+                        "CustomerSession": []
+                    }
+                ],
                 "tags": [
                     "Orders"
                 ],
@@ -759,7 +779,12 @@
                 }
             },
             "delete": {
-                "summary": "Delete an order",
+                "summary": "Delete an order (admin only)",
+                "security": [
+                    {
+                        "CustomerSession": []
+                    }
+                ],
                 "tags": [
                     "Orders"
                 ],
@@ -786,7 +811,12 @@
         },
         "/api/order-details": {
             "get": {
-                "summary": "Returns all order details",
+                "summary": "Return the current customer's order details (admins can list all)",
+                "security": [
+                    {
+                        "CustomerSession": []
+                    }
+                ],
                 "tags": [
                     "Order Details"
                 ],
@@ -807,7 +837,12 @@
                 }
             },
             "post": {
-                "summary": "Create a new order detail",
+                "summary": "Create an order detail (admin only)",
+                "security": [
+                    {
+                        "CustomerSession": []
+                    }
+                ],
                 "tags": [
                     "Order Details"
                 ],
@@ -838,6 +873,11 @@
         "/api/order-details/{id}": {
             "get": {
                 "summary": "Get an order detail by ID",
+                "security": [
+                    {
+                        "CustomerSession": []
+                    }
+                ],
                 "tags": [
                     "Order Details"
                 ],
@@ -869,7 +909,12 @@
                 }
             },
             "put": {
-                "summary": "Update an order detail",
+                "summary": "Update an order detail (admin only)",
+                "security": [
+                    {
+                        "CustomerSession": []
+                    }
+                ],
                 "tags": [
                     "Order Details"
                 ],
@@ -911,7 +956,12 @@
                 }
             },
             "delete": {
-                "summary": "Delete an order detail",
+                "summary": "Delete an order detail (admin only)",
+                "security": [
+                    {
+                        "CustomerSession": []
+                    }
+                ],
                 "tags": [
                     "Order Details"
                 ],
@@ -1583,7 +1633,12 @@
                     "Carts"
                 ],
                 "summary": "Atomically create an order and clear its cart",
-                "description": "Reuse checkoutId on retries to recover the same receipt without another order. No payment or email is sent.",
+                "security": [
+                    {
+                        "CustomerSession": []
+                    }
+                ],
+                "description": "Sign in and use your account cart. Reuse checkoutId on retries to recover the same receipt without another order. No payment or email is sent.",
                 "requestBody": {
                     "required": true,
                     "content": {
@@ -1607,6 +1662,9 @@
                     },
                     "400": {
                         "$ref": "#/components/responses/CartInvalid"
+                    },
+                    "401": {
+                        "description": "Sign in before placing an order"
                     },
                     "404": {
                         "$ref": "#/components/responses/CartNotFound"
@@ -1637,6 +1695,11 @@
                     "Carts"
                 ],
                 "summary": "Retrieve a saved order confirmation",
+                "security": [
+                    {
+                        "CustomerSession": []
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "Immutable order receipt",
@@ -1653,6 +1716,213 @@
                     },
                     "404": {
                         "$ref": "#/components/responses/CartNotFound"
+                    }
+                }
+            }
+        },
+        "/api/me/orders": {
+            "get": {
+                "tags": [
+                    "Accounts"
+                ],
+                "summary": "Return this customer's latest 100 checkout receipts, newest first",
+                "security": [
+                    {
+                        "CustomerSession": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Own checkout receipts only",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/CheckoutReceipt"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or expired session"
+                    }
+                }
+            }
+        },
+        "/api/me/orders/{id}": {
+            "get": {
+                "tags": [
+                    "Accounts"
+                ],
+                "summary": "Return an order receipt owned by the current customer",
+                "security": [
+                    {
+                        "CustomerSession": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Own receipt",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CheckoutReceipt"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or expired session"
+                    },
+                    "404": {
+                        "description": "Order not found or owned by another user"
+                    }
+                }
+            }
+        },
+        "/api/auth/register": {
+            "post": {
+                "tags": [
+                    "Accounts"
+                ],
+                "summary": "Register a customer, merge their guest cart and sign in",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Registration"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Account created and session cookie set",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AuthSession"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid registration fields"
+                    },
+                    "403": {
+                        "description": "Disallowed request Origin"
+                    },
+                    "404": {
+                        "description": "Guest cart is owned by someone else or already consumed"
+                    },
+                    "409": {
+                        "description": "Duplicate email or merged quantity would exceed 999"
+                    }
+                }
+            }
+        },
+        "/api/auth/login": {
+            "post": {
+                "tags": [
+                    "Accounts"
+                ],
+                "summary": "Sign in and merge the guest cart atomically",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/LoginCredentials"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Session cookie set and account cart returned",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AuthSession"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid credentials format"
+                    },
+                    "401": {
+                        "description": "Incorrect email or password"
+                    },
+                    "403": {
+                        "description": "Disallowed request Origin"
+                    },
+                    "404": {
+                        "description": "Guest cart cannot be merged into this account"
+                    },
+                    "409": {
+                        "description": "Merged quantity would exceed 999"
+                    },
+                    "429": {
+                        "description": "Ten failed logins in 15 minutes for this email and client IP"
+                    }
+                }
+            }
+        },
+        "/api/auth/me": {
+            "get": {
+                "tags": [
+                    "Accounts"
+                ],
+                "summary": "Restore the current user session and account cart",
+                "security": [
+                    {
+                        "CustomerSession": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Current customer",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AuthSession"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or expired session"
+                    }
+                }
+            }
+        },
+        "/api/auth/logout": {
+            "post": {
+                "tags": [
+                    "Accounts"
+                ],
+                "summary": "Revoke the current session and clear its cookie",
+                "responses": {
+                    "204": {
+                        "description": "Signed out"
+                    },
+                    "403": {
+                        "description": "Disallowed request Origin"
                     }
                 }
             }
@@ -2185,6 +2455,106 @@
                         "minimum": 0
                     }
                 }
+            },
+            "Customer": {
+                "type": "object",
+                "required": [
+                    "userId",
+                    "name",
+                    "email",
+                    "role"
+                ],
+                "properties": {
+                    "userId": {
+                        "type": "integer"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email"
+                    },
+                    "role": {
+                        "type": "string",
+                        "enum": [
+                            "customer",
+                            "admin"
+                        ]
+                    }
+                }
+            },
+            "AuthSession": {
+                "type": "object",
+                "required": [
+                    "user",
+                    "cartId"
+                ],
+                "properties": {
+                    "user": {
+                        "$ref": "#/components/schemas/Customer"
+                    },
+                    "cartId": {
+                        "type": "string",
+                        "format": "uuid"
+                    }
+                }
+            },
+            "LoginCredentials": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "email",
+                    "password"
+                ],
+                "properties": {
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "maxLength": 254
+                    },
+                    "password": {
+                        "type": "string",
+                        "minLength": 12,
+                        "maxLength": 128,
+                        "writeOnly": true
+                    },
+                    "guestCartId": {
+                        "type": "string",
+                        "format": "uuid"
+                    }
+                }
+            },
+            "Registration": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "name",
+                    "email",
+                    "password"
+                ],
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "maxLength": 254
+                    },
+                    "password": {
+                        "type": "string",
+                        "minLength": 12,
+                        "maxLength": 128,
+                        "writeOnly": true
+                    },
+                    "guestCartId": {
+                        "type": "string",
+                        "format": "uuid"
+                    }
+                }
             }
         },
         "parameters": {
@@ -2224,6 +2594,13 @@
             "CartNotFound": {
                 "description": "Product, branch, cart item or checkout not found"
             }
+        },
+        "securitySchemes": {
+            "CustomerSession": {
+                "type": "apiKey",
+                "in": "cookie",
+                "name": "octocat_session"
+            }
         }
     },
     "tags": [
@@ -2262,6 +2639,10 @@
         {
             "name": "Carts",
             "description": "Persistent guest carts and atomic checkout without payment"
+        },
+        {
+            "name": "Accounts",
+            "description": "Database-backed customer accounts and seven-day HttpOnly cookie sessions"
         }
     ]
 }
