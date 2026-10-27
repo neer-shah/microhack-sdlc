@@ -3,8 +3,7 @@
 // -----------------------------------------------------------------------------
 // Holds the two application images (api, frontend) that the Container Apps pull.
 //
-// This is a STARTER SKELETON. The core resource + key params are wired so the
-// template compiles, but the meaningful decisions are left as // TODO for you.
+// Apps use managed identity for image pulls; admin credentials stay disabled.
 // =============================================================================
 
 @description('Azure region for the registry.')
@@ -16,9 +15,6 @@ param registryName string
 @description('Tags applied to the registry.')
 param tags object = {}
 
-// TODO: Decide the SKU. Basic is cheapest and fine for a hackathon; Standard/
-//       Premium add throughput, geo-replication, private endpoints, etc.
-//       Ask Copilot for Well-Architected guidance if unsure.
 @allowed([
   'Basic'
   'Standard'
@@ -26,13 +22,9 @@ param tags object = {}
 ])
 param sku string = 'Basic'
 
-// TODO: For OIDC/managed-identity pulls you can (and ideally should) keep the
-//       admin user DISABLED and grant the Container Apps' identity AcrPull
-//       instead. The scaffold defaults to enabled to keep first-run simple —
-//       flip this to false once you wire up role assignments.
-param adminUserEnabled bool = true
+param adminUserEnabled bool = false
 
-resource registry 'Microsoft.ContainerRegistry/registries@2023-11-01-preview' = {
+resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   name: registryName
   location: location
   tags: tags
@@ -41,8 +33,6 @@ resource registry 'Microsoft.ContainerRegistry/registries@2023-11-01-preview' = 
   }
   properties: {
     adminUserEnabled: adminUserEnabled
-    // TODO: Consider `publicNetworkAccess: 'Disabled'` + private endpoints for
-    //       a hardened setup, and `anonymousPullEnabled: false`.
   }
 }
 

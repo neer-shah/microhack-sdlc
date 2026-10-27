@@ -10,6 +10,7 @@ FROM nginx:alpine
 COPY --from=builder /app/dist/ /usr/share/nginx/html/
 COPY --from=builder /app/public/* /usr/share/nginx/html/
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY api-proxy.conf.template /etc/nginx/api-proxy.conf.template
 COPY entrypoint.sh /entrypoint.sh
 
 # Set proper permissions for the nginx html directory and entrypoint script
