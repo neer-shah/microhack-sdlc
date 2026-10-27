@@ -1435,6 +1435,227 @@
                     }
                 }
             }
+        },
+        "/api/carts/{cartId}": {
+            "parameters": [
+                {
+                    "$ref": "#/components/parameters/CartId"
+                }
+            ],
+            "get": {
+                "tags": [
+                    "Carts"
+                ],
+                "summary": "Get a guest cart (an unused UUID returns an empty cart)",
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/CartResponse"
+                    },
+                    "400": {
+                        "$ref": "#/components/responses/CartInvalid"
+                    }
+                }
+            }
+        },
+        "/api/carts/{cartId}/items": {
+            "parameters": [
+                {
+                    "$ref": "#/components/parameters/CartId"
+                }
+            ],
+            "post": {
+                "tags": [
+                    "Carts"
+                ],
+                "summary": "Add quantity to a product in the cart (maximum 999 per product)",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "productId",
+                                    "quantity"
+                                ],
+                                "properties": {
+                                    "productId": {
+                                        "type": "integer",
+                                        "minimum": 1
+                                    },
+                                    "quantity": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 999
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/CartResponse"
+                    },
+                    "400": {
+                        "$ref": "#/components/responses/CartInvalid"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/CartNotFound"
+                    }
+                }
+            }
+        },
+        "/api/carts/{cartId}/items/{productId}": {
+            "parameters": [
+                {
+                    "$ref": "#/components/parameters/CartId"
+                },
+                {
+                    "$ref": "#/components/parameters/CartProductId"
+                }
+            ],
+            "put": {
+                "tags": [
+                    "Carts"
+                ],
+                "summary": "Set the quantity of an existing cart item",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "quantity"
+                                ],
+                                "properties": {
+                                    "quantity": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 999
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/CartResponse"
+                    },
+                    "400": {
+                        "$ref": "#/components/responses/CartInvalid"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/CartNotFound"
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Carts"
+                ],
+                "summary": "Remove an item from the cart",
+                "responses": {
+                    "200": {
+                        "$ref": "#/components/responses/CartResponse"
+                    },
+                    "400": {
+                        "$ref": "#/components/responses/CartInvalid"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/CartNotFound"
+                    }
+                }
+            }
+        },
+        "/api/carts/{cartId}/checkout": {
+            "parameters": [
+                {
+                    "$ref": "#/components/parameters/CartId"
+                }
+            ],
+            "post": {
+                "tags": [
+                    "Carts"
+                ],
+                "summary": "Atomically create an order and clear its cart",
+                "description": "Reuse checkoutId on retries to recover the same receipt without another order. No payment or email is sent.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CheckoutRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Order placed, or original receipt returned on retry",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CheckoutReceipt"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "$ref": "#/components/responses/CartInvalid"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/CartNotFound"
+                    },
+                    "409": {
+                        "description": "Empty cart, changed version or price, or checkout ID already used by another cart"
+                    }
+                }
+            }
+        },
+        "/api/carts/{cartId}/checkouts/{checkoutId}": {
+            "parameters": [
+                {
+                    "$ref": "#/components/parameters/CartId"
+                },
+                {
+                    "in": "path",
+                    "name": "checkoutId",
+                    "required": true,
+                    "schema": {
+                        "type": "string",
+                        "format": "uuid"
+                    }
+                }
+            ],
+            "get": {
+                "tags": [
+                    "Carts"
+                ],
+                "summary": "Retrieve a saved order confirmation",
+                "responses": {
+                    "200": {
+                        "description": "Immutable order receipt",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CheckoutReceipt"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "$ref": "#/components/responses/CartInvalid"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/CartNotFound"
+                    }
+                }
+            }
         }
     },
     "components": {
@@ -1771,6 +1992,237 @@
                         "description": "Whether the supplier is verified"
                     }
                 }
+            },
+            "CartItem": {
+                "type": "object",
+                "required": [
+                    "productId",
+                    "name",
+                    "imgName",
+                    "quantity",
+                    "unitPriceCents",
+                    "lineTotalCents"
+                ],
+                "properties": {
+                    "productId": {
+                        "type": "integer"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "imgName": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "quantity": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 999
+                    },
+                    "unitPriceCents": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "lineTotalCents": {
+                        "type": "integer",
+                        "minimum": 0
+                    }
+                }
+            },
+            "Cart": {
+                "type": "object",
+                "required": [
+                    "cartId",
+                    "version",
+                    "items",
+                    "totalCents",
+                    "itemCount"
+                ],
+                "properties": {
+                    "cartId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "version": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/CartItem"
+                        }
+                    },
+                    "totalCents": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "itemCount": {
+                        "type": "integer",
+                        "minimum": 0
+                    }
+                }
+            },
+            "DeliveryDetails": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "name",
+                    "email",
+                    "address",
+                    "city",
+                    "postalCode",
+                    "country"
+                ],
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "maxLength": 254
+                    },
+                    "address": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500
+                    },
+                    "city": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120
+                    },
+                    "postalCode": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 32
+                    },
+                    "country": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120
+                    }
+                }
+            },
+            "CheckoutRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "checkoutId",
+                    "expectedVersion",
+                    "expectedTotalCents",
+                    "branchId",
+                    "delivery"
+                ],
+                "properties": {
+                    "checkoutId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "expectedVersion": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "expectedTotalCents": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "branchId": {
+                        "type": "integer",
+                        "minimum": 1
+                    },
+                    "delivery": {
+                        "$ref": "#/components/schemas/DeliveryDetails"
+                    }
+                }
+            },
+            "CheckoutReceipt": {
+                "type": "object",
+                "required": [
+                    "checkoutId",
+                    "cartId",
+                    "orderId",
+                    "placedAt",
+                    "delivery",
+                    "items",
+                    "totalCents",
+                    "itemCount"
+                ],
+                "properties": {
+                    "checkoutId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "cartId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "orderId": {
+                        "type": "integer"
+                    },
+                    "placedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "delivery": {
+                        "$ref": "#/components/schemas/DeliveryDetails"
+                    },
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/CartItem"
+                        }
+                    },
+                    "totalCents": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "itemCount": {
+                        "type": "integer",
+                        "minimum": 0
+                    }
+                }
+            }
+        },
+        "parameters": {
+            "CartId": {
+                "in": "path",
+                "name": "cartId",
+                "required": true,
+                "schema": {
+                    "type": "string",
+                    "format": "uuid"
+                }
+            },
+            "CartProductId": {
+                "in": "path",
+                "name": "productId",
+                "required": true,
+                "schema": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "responses": {
+            "CartResponse": {
+                "description": "Current cart with server-calculated discounted prices in USD cents",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/Cart"
+                        }
+                    }
+                }
+            },
+            "CartInvalid": {
+                "description": "Invalid UUID, quantity, delivery details or unknown request field"
+            },
+            "CartNotFound": {
+                "description": "Product, branch, cart item or checkout not found"
             }
         }
     },
@@ -1806,6 +2258,10 @@
         {
             "name": "Suppliers",
             "description": "API endpoints for managing suppliers"
+        },
+        {
+            "name": "Carts",
+            "description": "Persistent guest carts and atomic checkout without payment"
         }
     ]
 }

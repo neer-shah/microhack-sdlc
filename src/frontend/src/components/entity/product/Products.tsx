@@ -3,6 +3,8 @@ import axios from 'axios';
 import { useQuery } from 'react-query';
 import { api } from '../../../api/config';
 import { useTheme } from '../../../context/ThemeContext';
+import { useCart } from '../../../context/CartContext';
+import { cartError } from '../../../api/cart';
 
 interface Product {
   productId: number;
@@ -28,6 +30,8 @@ export default function Products() {
   const [showModal, setShowModal] = useState(false);
   const { data: products, isLoading, error } = useQuery('products', fetchProducts);
   const { darkMode } = useTheme();
+  const { addItem, busy: cartBusy } = useCart();
+  const [cartNotice, setCartNotice] = useState('');
 
   const filteredProducts = products?.filter(
     (product) =>
@@ -45,19 +49,20 @@ export default function Products() {
   const handleQuantityChange = (productId: number, change: number) => {
     setQuantities((prev) => ({
       ...prev,
-      [productId]: Math.max(0, (prev[productId] || 0) + change),
+      [productId]: Math.min(999, Math.max(0, (prev[productId] || 0) + change)),
     }));
   };
 
-  const handleAddToCart = (productId: number) => {
+  const handleAddToCart = async (productId: number) => {
     const quantity = quantities[productId] || 0;
     if (quantity > 0) {
-      // TODO: Implement cart functionality
-      alert(`Added ${quantity} items to cart`);
-      setQuantities((prev) => ({
-        ...prev,
-        [productId]: 0,
-      }));
+      try {
+        await addItem(productId, quantity);
+        setCartNotice(`Added ${quantity} ${quantity === 1 ? 'item' : 'items'} to your cart.`);
+        setQuantities((prev) => ({ ...prev, [productId]: 0 }));
+      } catch (error) {
+        setCartNotice(cartError(error));
+      }
     }
   };
 
@@ -103,6 +108,7 @@ export default function Products() {
           >
             Products
           </h1>
+          {cartNotice && <p role="status" className={darkMode ? 'text-light' : 'text-gray-800'}>{cartNotice}</p>}
 
           <div className="relative">
             <input
@@ -216,6 +222,7 @@ export default function Products() {
                           className={`w-8 h-8 flex items-center justify-center ${darkMode ? 'text-light' : 'text-gray-700'} hover:text-primary transition-colors duration-300`}
                           aria-label={`Decrease quantity of ${product.name}`}
                           id={`decrease-qty-${product.productId}`}
+                          disabled={cartBusy || !quantities[product.productId]}
                         >
                           <span aria-hidden="true">-</span>
                         </button>
@@ -231,6 +238,7 @@ export default function Products() {
                           className={`w-8 h-8 flex items-center justify-center ${darkMode ? 'text-light' : 'text-gray-700'} hover:text-primary transition-colors duration-300`}
                           aria-label={`Increase quantity of ${product.name}`}
                           id={`increase-qty-${product.productId}`}
+                          disabled={cartBusy || quantities[product.productId] >= 999}
                         >
                           <span aria-hidden="true">+</span>
                         </button>
@@ -241,7 +249,7 @@ export default function Products() {
                           ? 'bg-primary hover:bg-accent text-white'
                           : `${darkMode ? 'bg-gray-700 text-gray-400' : 'bg-gray-200 text-gray-500'} cursor-not-allowed`
                           }`}
-                        disabled={!quantities[product.productId]}
+                        disabled={!quantities[product.productId] || cartBusy}
                         aria-label={`Add ${quantities[product.productId] || 0} ${product.name} to cart`}
                         id={`add-to-cart-${product.productId}`}
                       >

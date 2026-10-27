@@ -12,7 +12,7 @@ class ApiException(Exception):
 
 
 class NotFoundException(ApiException):
-    def __init__(self, entity: str, entity_id: int) -> None:
+    def __init__(self, entity: str, entity_id: int | str) -> None:
         super().__init__(f"{entity} with ID {entity_id} not found", "NOT_FOUND", 404)
 
 

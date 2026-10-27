@@ -33,6 +33,7 @@ export const API_BASE_URL = getBaseUrl();
 export const api = {
   baseURL: API_BASE_URL,
   endpoints: {
+    carts: '/api/carts',
     products: '/api/products',
     suppliers: '/api/suppliers',
     orders: '/api/orders',

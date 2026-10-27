@@ -1,5 +1,33 @@
 # React + TypeScript + Vite
 
+## Cart and checkout
+
+Both the TypeScript and Python APIs support the same cart flow:
+
+- Product **Add to Cart** saves items through `/api/carts`.
+- The shared `CartProvider` caches server state with React Query. A guest cart
+  UUID in local storage preserves the cart across navigation, reloads and
+  browser restarts on the same origin. Storage events synchronize mutations
+  across tabs; focus refetch and a 15-second refresh also update server changes.
+- `/cart` supports increasing/decreasing quantities, deleting items and
+  continuing to checkout. The navigation shows the current item count.
+- `/checkout` collects delivery details and an ordering branch, then shows an
+  itemized review. A changed cart must be reviewed again.
+- Placing an order uses an idempotency UUID, authoritative server prices and an
+  atomic transaction. Checkout failures retain the review for retry; a lost
+  response can be retried without creating a duplicate order.
+- `/checkout/confirmation/{cartId}/{checkoutId}` reloads the saved receipt.
+
+This is a guest/demo flow: no real payments, email, shipping fees, tax or stock
+reservation. Carts are browser-specific, not linked to the demo login or shared
+across devices. Clearing site storage loses the guest cart identifier.
+
+For browser tests, start the chosen API and frontend using the existing Make
+targets, then run `npm run test:e2e -- cart.spec.ts` from this directory. To use
+already-running servers, set `PLAYWRIGHT_WEB_SERVER=false` and
+`PLAYWRIGHT_BASE_URL` to the frontend origin. The tests use the shared seed
+product with ID 1 and create orders, so use an isolated development database.
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:

@@ -9,6 +9,10 @@ import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import AdminProducts from './components/admin/AdminProducts';
 import { useTheme } from './context/ThemeContext';
+import { CartProvider, CartFeedback } from './context/CartContext';
+import CartPage from './components/cart/Cart';
+import Checkout from './components/cart/Checkout';
+import Confirmation from './components/cart/Confirmation';
 
 // Wrapper component to apply theme classes
 function ThemedApp() {
@@ -25,11 +29,15 @@ function ThemedApp() {
             <Route path="/" element={<Welcome />} />
             <Route path="/about" element={<About />} />
             <Route path="/products" element={<Products />} />
+            <Route path="/cart" element={<CartPage />} />
+            <Route path="/checkout" element={<Checkout />} />
+            <Route path="/checkout/confirmation/:cartId/:checkoutId" element={<Confirmation />} />
             <Route path="/login" element={<Login />} />
             <Route path="/admin/products" element={<AdminProducts />} />
           </Routes>
         </main>
         <Footer />
+        <CartFeedback />
       </div>
     </Router>
   );
@@ -39,7 +47,9 @@ function App() {
   return (
     <AuthProvider>
       <ThemeProvider>
-        <ThemedApp />
+        <CartProvider>
+          <ThemedApp />
+        </CartProvider>
       </ThemeProvider>
     </AuthProvider>
   );

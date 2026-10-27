@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from database.migrate import initialize_database
 from routes.branches import router as branches_router
+from routes.carts import router as carts_router
 from routes.deliveries import router as deliveries_router
 from routes.headquarters import router as headquarters_router
 from routes.order_detail_deliveries import router as order_detail_deliveries_router
@@ -41,6 +42,7 @@ app.add_middleware(
 register_exception_handlers(app)
 
 app.include_router(deliveries_router)
+app.include_router(carts_router)
 app.include_router(order_detail_deliveries_router)
 app.include_router(products_router)
 app.include_router(order_details_router)
